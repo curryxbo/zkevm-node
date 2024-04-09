@@ -15,30 +15,28 @@ import (
 	"github.com/jackc/pgx/v4"
 )
 
-// tryBuildFinalProof checks if the provided proof is eligible to be used to
-// build the final proof.  If no proof is provided it looks for a previously
-// generated proof.  If the proof is eligible, then the final proof generation
-// is triggered.
-func (a *Aggregator) tryBuildFinalProof(ctx context.Context, prover proverInterface, proof *state.BatchProof) (bool, error) {
+// tryBuildFinalProof checks if the provided proof is eligible to be used to build the final proof.
+// If no proof is provided it looks for a previously generated proof. If the proof is eligible, then the final proof generation is triggered.
+func (a *Aggregator) tryBuildFinalProof(ctx context.Context, prover proverInterface, proof *state.BlobOuterProof) (bool, error) {
 	proverName := prover.Name()
 	proverID := prover.ID()
 
-	log := log.WithFields(
-		"prover", proverName,
-		"proverId", proverID,
-		"proverAddr", prover.Addr(),
-	)
-	log.Debug("tryBuildFinalProof start")
+	log.Debug("tryBuildFinalProof started, prover: %s, proverId: %s", proverName, proverID)
 
-	var err error
-	if !a.canVerifyProof() {
-		log.Debug("Time to verify proof not reached or proof verification in progress")
+	verifyTimeReached, verifyInProgress := a.canVerifyProof()
+	if !verifyTimeReached || verifyInProgress {
+		if verifyInProgress {
+			log.Debug("time to verify proof reached but there is already a proof verification in progress")
+		} else {
+			log.Debug("time to verify proof not reached")
+		}
 		return false, nil
 	}
-	log.Debug("Send final proof time reached")
+
+	log.Debug("time to verify proof reached")
 
 	for !a.isSynced(ctx, nil) {
-		log.Info("Waiting for synchronizer to sync...")
+		log.Info("waiting for synchronizer to sync...")
 		time.Sleep(a.cfg.RetryTime.Duration)
 		continue
 	}
@@ -46,20 +44,18 @@ func (a *Aggregator) tryBuildFinalProof(ctx context.Context, prover proverInterf
 	var lastVerifiedBatchNum uint64
 	lastVerifiedBatch, err := a.State.GetLastVerifiedBatch(ctx, nil)
 	if err != nil && !errors.Is(err, state.ErrNotFound) {
-		return false, fmt.Errorf("failed to get last verified batch, %w", err)
+		return false, fmt.Errorf("failed to get last verified batch, error: %v", err)
 	}
 	if lastVerifiedBatch != nil {
 		lastVerifiedBatchNum = lastVerifiedBatch.BatchNumber
 	}
 
 	if proof == nil {
-		// we don't have a proof generating at the moment, check if we
-		// have a proof ready to verify
-
+		// we don't have a blobOtuer proof generated at the moment, check if we have a previous blobOuter proof ready to verify
 		proof, err = a.getAndLockProofReadyForFinal(ctx, prover, lastVerifiedBatchNum)
 		if errors.Is(err, state.ErrNotFound) {
 			// nothing to verify, swallow the error
-			log.Debug("No proof ready to verify")
+			log.Debug("no blobOuter proof ready to verify")
 			return false, nil
 		}
 		if err != nil {
@@ -70,7 +66,7 @@ func (a *Aggregator) tryBuildFinalProof(ctx context.Context, prover proverInterf
 			if err != nil {
 				// Set the generating state to false for the proof ("unlock" it)
 				proof.GeneratingSince = nil
-				err2 := a.State.UpdateBatchProof(a.ctx, proof, nil)
+				err2 := a.State.UpdateBlobOuterProof(a.ctx, proof, nil)
 				if err2 != nil {
 					log.Errorf("Failed to unlock proof: %v", err2)
 				}
@@ -88,12 +84,7 @@ func (a *Aggregator) tryBuildFinalProof(ctx context.Context, prover proverInterf
 		}
 	}
 
-	log = log.WithFields(
-		"proofId", *proof.Id,
-		"batches", fmt.Sprintf("%d-%d", proof.BatchNumber, proof.BatchNumberFinal),
-	)
-
-	// at this point we have an eligible proof, build the final one using it
+	// at this point we have an eligible blobOuter proof, build the final one using it
 	finalProof, err := a.buildFinalProof(ctx, prover, proof)
 	if err != nil {
 		err = fmt.Errorf("failed to build final proof, %w", err)
@@ -183,35 +174,29 @@ func (a *Aggregator) getAndLockProofReadyForFinal(ctx context.Context, prover pr
 	return proofToVerify, nil
 }
 
-func (a *Aggregator) validateEligibleFinalProof(ctx context.Context, proof *state.BatchProof, lastVerifiedBatchNum uint64) (bool, error) {
-	batchNumberToVerify := lastVerifiedBatchNum + 1
+func (a *Aggregator) isFinalProof(ctx context.Context, proof *state.BlobOuterProof) (bool, error) {
+	//TODO: review implementation, we need to checl last verfied blobinner number and check that the blobOuter proof begins with the next one
+	blobOuterNumberToVerify := uint64(0);
 
-	if proof.BatchNumber != batchNumberToVerify {
-		if proof.BatchNumber < batchNumberToVerify && proof.BatchNumberFinal >= batchNumberToVerify {
-			// We have a proof that contains some batches below the last batch verified, anyway can be eligible as final proof
-			log.Warnf("Proof %d-%d contains some batches lower than last batch verified %d. Check anyway if it is eligible", proof.BatchNumber, proof.BatchNumberFinal, lastVerifiedBatchNum)
-		} else if proof.BatchNumberFinal < batchNumberToVerify {
-			// We have a proof that contains batches below that the last batch verified, we need to delete this proof
-			log.Warnf("Proof %d-%d lower than next batch to verify %d. Deleting it", proof.BatchNumber, proof.BatchNumberFinal, batchNumberToVerify)
-			err := a.State.DeleteBatchProofs(ctx, proof.BatchNumber, proof.BatchNumberFinal, nil)
+	//TODO: review if this criteria still applies
+	if proof.BlobOuterNumber != blobOuterNumberToVerify {
+		if proof.BlobOuterNumber < blobOuterNumberToVerify && proof.BlobOuterNumberFinal >= blobOuterNumberToVerify {
+			// We have a blobOuter proof that contains some blobInners below the last blobInner verified, anyway can be eligible as final proof
+			log.Warnf("blobOuterProof [%d-%d] contains some blobInners lower than last blobInner verified %d, anyway we can generate final proof", proof.BlobOuterNumber, proof.BlobOuterNumberFinal, blobOuterNumberToVerify-1)
+		} else if proof.BlobOuterNumberFinal < blobOuterNumberToVerify {
+			// We have a blobOuter proof that all blobInners are below to the last blobInner verified, we need to delete this proof
+			log.Warnf("blobOuterProof [%d-%d] lower than next blobInner to verify %d, deleting it", proof.BlobOuterNumber, proof.BlobOuterNumberFinal, blobOuterNumberToVerify-1)
+			err := a.State.DeleteBlobOuterProofs(ctx, proof.BlobOuterNumber, proof.BlobOuterNumberFinal, nil)
 			if err != nil {
-				return false, fmt.Errorf("failed to delete discarded proof, err: %w", err)
+				return false, fmt.Errorf("failed to delete discarded blobOuter proof, error: %b", err)
 			}
 			return false, nil
 		} else {
-			log.Debugf("Proof batch number %d is not the following to last verfied batch number %d", proof.BatchNumber, lastVerifiedBatchNum)
+			log.Debugf("blobOuterProof [%d-%d] is not a final proof, is not the following to last blobInner verified %d", proof.BlobOuterNumber, proof.BlobOuterNumberFinal, blobOuterNumberToVerify-1)
 			return false, nil
 		}
 	}
 
-	bComplete, err := a.State.CheckProofContainsCompleteSequences(ctx, proof, nil)
-	if err != nil {
-		return false, fmt.Errorf("failed to check if proof contains complete sequences, %w", err)
-	}
-	if !bComplete {
-		log.Infof("Recursive proof %d-%d not eligible to be verified: not containing complete sequences", proof.BatchNumber, proof.BatchNumberFinal)
-		return false, nil
-	}
 	return true, nil
 }
 

@@ -254,8 +254,7 @@ func (a *Aggregator) Channel(stream prover.AggregatorService_ChannelServer) erro
 	}
 }
 
-// canVerifyProof returns true if we have reached the timeout to verify a proof
-// and no other prover is verifying a proof (verifyingProof = false).
+// canVerifyProof returns true if we have reached the timeout to verify a proof and no other prover is verifying a proof (verifyingProof = false)
 func (a *Aggregator) canVerifyProof() bool {
 	a.TimeSendFinalProofMutex.RLock()
 	defer a.TimeSendFinalProofMutex.RUnlock()

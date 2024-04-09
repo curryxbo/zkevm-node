@@ -12,7 +12,10 @@ import (
 )
 
 func (a *Aggregator) tryGenerateBlobInnerProof(ctx context.Context, prover proverInterface) (bool, error) {
-	log.Debug("tryGenerateBlobInnerProof started, prover: %s, proverId: %s", prover.Name(), prover.ID())
+	proverId := prover.ID()
+	proverName := prover.Name()
+
+	log.Debug("tryGenerateBlobInnerProof started, prover: %s, proverId: %s", proverName, proverId)
 
 	handleError := func(blobInnerNum uint64, logError error) (bool, error) {
 		log.Errorf(logError.Error())
@@ -22,62 +25,62 @@ func (a *Aggregator) tryGenerateBlobInnerProof(ctx context.Context, prover prove
 			log.Errorf("failed to delete blobInner %d proof in progress, error: %v", blobInnerNum, err)
 		}
 
-		log.Debug("tryGenerateBlobInnerProof ended with errors")
+		log.Debugf("tryGenerateBlobInnerProof ended with errors, prover: %s, proverId: %s", proverName, proverId)
 
 		return false, logError
 	}
 
-	blobInnerToProve, blobInnerProof, err := a.getAndLockBlobInnerToProve(ctx, prover)
+	blobInnerToProve, proof, err := a.getAndLockBlobInnerToProve(ctx, prover)
 	if errors.Is(err, state.ErrNotFound) {
-		log.Debug("no blobInner pending to generate proof")
+		log.Debugf("no blobInner to prove, prover: %s, proverId: %s", proverName, proverId)
 		return false, nil
 	}
 	if err != nil {
 		return false, err
 	}
 
-	log.Info("generating proof for blobInner %d", blobInnerToProve.BlobInnerNum)
+	log.Infof("found blobInner %d pending to generate proof", blobInnerToProve)
 
 	inputProver, err := a.buildBlobInnerProverInputs(ctx, blobInnerToProve)
 	if err != nil {
-		err := fmt.Errorf("failed to build prover blobInner %d proof request, error: %v", blobInnerToProve.BlobInnerNum, err)
+		err := fmt.Errorf("failed to build blobInner %d proof prover request, error: %v", blobInnerToProve.BlobInnerNum, err)
 		return handleError(blobInnerToProve.BlobInnerNum, err)
 	}
 
 	b, err := json.Marshal(inputProver)
 	if err != nil {
-		err = fmt.Errorf("failed to serialize prover request, error: %v", err)
+		err = fmt.Errorf("failed to serialize blobInner %d proof request, error: %v", blobInnerToProve.BlobInnerNum, err)
 		return handleError(blobInnerToProve.BlobInnerNum, err)
 	}
 
-	blobInnerProof.InputProver = string(b)
+	proof.InputProver = string(b)
 
-	log.Infof("sending blobInner %d proof request to the prover", blobInnerToProve.BlobInnerNum)
+	log.Infof("sending batch %d proof request, prover: %s, proverId: %s", blobInnerToProve.BlobInnerNum, proverName, proverId)
 
 	proofId, err := prover.BlobInnerProof(inputProver)
 	if err != nil {
-		err = fmt.Errorf("failed to get blobInner %d proof id, error: %v", blobInnerToProve.BlobInnerNum, err)
+		err = fmt.Errorf("failed to get blobInner %d proof from prover, proverId: %s, error: %v", blobInnerToProve.BlobInnerNum, *proof.Id, err)
 		return handleError(blobInnerToProve.BlobInnerNum, err)
 	}
 
-	blobInnerProof.Id = proofId
+	proof.Id = proofId
 
-	log.Infof("generating blobInner %d proof, Id: %s", blobInnerToProve.BlobInnerNum, *blobInnerProof.Id)
+	log.Infof("generating blobInner %d proof, proofId: %s", blobInnerToProve.BlobInnerNum, *proof.Id)
 
-	proofData, err := prover.WaitRecursiveProof(ctx, *blobInnerProof.Id)
+	proofData, err := prover.WaitRecursiveProof(ctx, *proof.Id)
 	if err != nil {
-		err = fmt.Errorf("failed to get blobInner proof id %s from prover, error: %v", blobInnerProof.Id, err)
+		err = fmt.Errorf("failed to get blobInner proof id %s from prover, error: %v", proof.Id, err)
 		return handleError(blobInnerToProve.BlobInnerNum, err)
 	}
 
-	log.Info("generated blobInner %d proof, Id: %s", blobInnerToProve.BlobInnerNum, *blobInnerProof.Id)
+	log.Info("generated blobInner %d proof, Id: %s", blobInnerToProve.BlobInnerNum, *proof.Id)
 
-	blobInnerProof.Data = proofData
-	blobInnerProof.GeneratingSince = nil
+	proof.Data = proofData
+	proof.GeneratingSince = nil
 
-	err = a.State.UpdateBlobInnerProof(a.ctx, blobInnerProof, nil)
+	err = a.State.UpdateBlobInnerProof(a.ctx, proof, nil)
 	if err != nil {
-		err = fmt.Errorf("failed to store blobInner %d proof, error: %v", blobInnerToProve.BlobInnerNum, err)
+		err = fmt.Errorf("failed to update blobInner %d proof, error: %v", blobInnerToProve.BlobInnerNum, err)
 		return handleError(blobInnerToProve.BlobInnerNum, err)
 	}
 

@@ -133,8 +133,8 @@ func (p *Prover) BatchProof(input *InputProver) (*string, error) {
 	return nil, fmt.Errorf("%w, wanted %T, got %T", ErrBadProverResponse, &ProverMessage_GenBatchProofResponse{}, res.Response)
 }
 
-// AggregatedProof instructs the prover to generate an aggregated proof from the two proof inputs provided. It returns the Id of the proof being computed
-func (p *Prover) AggregatedProof(inputProof1, inputProof2 string) (*string, error) {
+// AggregatedBatchProof instructs the prover to generate an aggregated proof from the two proof inputs provided. It returns the Id of the proof being computed
+func (p *Prover) AggregatedBatchProof(inputProof1, inputProof2 string) (*string, error) {
 	metrics.WorkingProver()
 
 	req := &AggregatorMessage{
@@ -237,6 +237,46 @@ func (p *Prover) BlobOuterProof(batchProof, blonInnerProof string) (*string, err
 	}
 
 	return nil, fmt.Errorf("%w, wanted %T, got %T", ErrBadProverResponse, &ProverMessage_GenBatchProofResponse{}, res.Response)
+}
+
+// AggregatedBlobOuterProof instructs the prover to generate an aggregated proof from the two blobOuter proof inputs provided. It returns the Id of the proof being computed
+func (p *Prover) AggregatedBlobOuterProof(inputProof1, inputProof2 string) (*string, error) {
+	metrics.WorkingProver()
+
+	req := &AggregatorMessage{
+		Request: &AggregatorMessage_GenAggregatedBlobOuterProofRequest{
+			GenAggregatedBlobOuterProofRequest: &GenAggregatedBlobOuterProofRequest{
+				RecursiveProof_1: inputProof1,
+				RecursiveProof_2: inputProof2,
+			},
+		},
+	}
+	res, err := p.call(req)
+	if err != nil {
+		return nil, err
+	}
+
+	//TODO: Review error codes returned
+	if msg, ok := res.Response.(*ProverMessage_GenAggregatedBlobOuterProofResponse); ok {
+		switch msg.GenAggregatedBlobOuterProofResponse.Result {
+		case Result_RESULT_UNSPECIFIED:
+			return nil, fmt.Errorf("failed to aggregate proofs %s, error: %v, input 1 %s, input 2 %s",
+				msg.GenAggregatedBlobOuterProofResponse.String(), ErrUnspecified, inputProof1, inputProof2)
+		case Result_RESULT_OK:
+			return &msg.GenAggregatedBlobOuterProofResponse.Id, nil
+		case Result_RESULT_ERROR:
+			return nil, fmt.Errorf("failed to aggregate proofs %s, error: %v, input 1 %s, input 2 %s",
+				msg.GenAggregatedBlobOuterProofResponse.String(), ErrBadRequest, inputProof1, inputProof2)
+		case Result_RESULT_INTERNAL_ERROR:
+			return nil, fmt.Errorf("failed to aggregate proofs %s, error: %v, input 1 %s, input 2 %s",
+				msg.GenAggregatedBlobOuterProofResponse.String(), ErrProverInternalError, inputProof1, inputProof2)
+		default:
+			return nil, fmt.Errorf("failed to aggregate proofs %s, error: %v, input 1 %s, input 2 %s",
+				msg.GenAggregatedBlobOuterProofResponse.String(), ErrUnknown, inputProof1, inputProof2)
+		}
+	}
+
+	return nil, fmt.Errorf("%w, wanted %T, got %T", ErrBadProverResponse, &ProverMessage_GenAggregatedBatchProofResponse{}, res.Response)
 }
 
 // FinalProof instructs the prover to generate a final proof for the given

@@ -79,7 +79,7 @@ func (p *PostgresStorage) GetProofReadyForFinal(ctx context.Context, lastVerfied
 	return proof, err
 }
 
-// GetBatchProofsToAggregate return the next 2 batch proofs that it are possible to aggregate
+// GetBatchProofsToAggregate return the next 2 batch proofs that are possible to aggregate
 func (p *PostgresStorage) GetBatchProofsToAggregate(ctx context.Context, dbTx pgx.Tx) (*state.BatchProof, *state.BatchProof, error) {
 	// TODO: add comments to explain the query
 	const getBatchProofsToAggregateSQL = `
@@ -282,12 +282,43 @@ func (p *PostgresStorage) UpdateBlobOuterProof(ctx context.Context, proof *state
 	return err
 }
 
-// DeleteBlobOuterProof deletes from the storage the blobOuter proof
-func (p *PostgresStorage) DeleteBlobOuterProof(ctx context.Context, blobOuterNumber uint64, blobOuterNumberFinal uint64, dbTx pgx.Tx) error {
-	const deleteBlobInnerProofSQL = "DELETE FROM state.blob_outer_proof WHERE blob_outer_num = $1 AND blob_outer_num_final = $2"
+// DeleteBlobOuterProofs deletes from the storage the blobOuter proofs falling inside the blobOuter numbers range
+func (p *PostgresStorage) DeleteBlobOuterProofs(ctx context.Context, blobOuterNumber uint64, blobOuterNumberFinal uint64, dbTx pgx.Tx) error {
+	const deleteBlobOuterProofsSQL = "DELETE FROM state.blob_outer_proof WHERE blob_outer_num >= $1 AND blob_outer_num_final <= $2"
 	e := p.getExecQuerier(dbTx)
-	_, err := e.Exec(ctx, deleteBlobInnerProofSQL, blobOuterNumber, blobOuterNumberFinal)
+	_, err := e.Exec(ctx, deleteBlobOuterProofsSQL, blobOuterNumber, blobOuterNumberFinal)
 	return err
+}
+
+// GetBlobOuterProofsToAggregate return the next 2 blobOuter proofs that are possible to aggregate
+func (p *PostgresStorage) GetBlobOuterProofsToAggregate(ctx context.Context, dbTx pgx.Tx) (*state.BlobOuterProof, *state.BlobOuterProof, error) {
+	const getBlobOuterProofsToAggregateSQL = `
+		SELECT 
+			bo1.blob_outer_num, bo1.blob_outer_num_final, bo1.proof, bo1.proof_id, bo1.input_prover, bo1.prover, bo1.prover_id, bo1.generating_since, bo1.created_at, bo1.updated_at,
+			bo2.blob_outer_num, bo2.blob_outer_num_final, bo2.proof, bo2.proof_id, bo2.input_prover, bo2.prover, bo2.prover_id, bo2.generating_since, bo2.created_at, bo2.updated_at
+		FROM state.blob_outer_proof bo1 INNER JOIN state.blob_outer_proof bo2 ON bo1.blob_outer_num_final = bo2.blob_outer_num - 1
+		WHERE bo1.generating_since IS NULL AND bo2.generating_since IS NULL AND 
+		 	  bo1.proof IS NOT NULL AND bo2.proof IS NOT NULL
+		ORDER BY bo1.blob_outer_num ASC
+		LIMIT 1
+		`
+
+	proof1 := &state.BlobOuterProof{}
+	proof2 := &state.BlobOuterProof{}
+
+	e := p.getExecQuerier(dbTx)
+	row := e.QueryRow(ctx, getBlobOuterProofsToAggregateSQL)
+	err := row.Scan(
+		&proof1.BlobOuterNumber, &proof1.BlobOuterNumberFinal, &proof1.Data, &proof1.Id, &proof1.InputProver, &proof1.Prover, &proof1.ProverID, &proof1.GeneratingSince, &proof1.CreatedAt, &proof1.UpdatedAt,
+		&proof2.BlobOuterNumber, &proof2.BlobOuterNumberFinal, &proof2.Data, &proof2.Id, &proof2.InputProver, &proof2.Prover, &proof2.ProverID, &proof2.GeneratingSince, &proof2.CreatedAt, &proof2.UpdatedAt)
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil, state.ErrNotFound
+	} else if err != nil {
+		return nil, nil, err
+	}
+
+	return proof1, proof2, err
 }
 
 func toPostgresInterval(duration string) (string, error) {

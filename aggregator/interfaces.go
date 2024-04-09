@@ -21,9 +21,10 @@ type proverInterface interface {
 	Addr() string
 	IsIdle() (bool, error)
 	BatchProof(input *prover.InputProver) (*string, error)
-	AggregatedProof(inputProof1, inputProof2 string) (*string, error)
+	AggregatedBatchProof(inputProof1, inputProof2 string) (*string, error)
 	BlobInnerProof(input *prover.InputBlobInnerProver) (*string, error)
 	BlobOuterProof(batchProof, blonInnerProof string) (*string, error)
+	AggregatedBlobOuterProof(inputProof1, inputProof2 string) (*string, error)
 	FinalProof(inputProof string, aggregatorAddr string) (*string, error)
 	WaitRecursiveProof(ctx context.Context, proofID string) (string, error)
 	WaitFinalProof(ctx context.Context, proofID string) (*prover.FinalProof, error)
@@ -79,5 +80,6 @@ type stateInterface interface {
 	GetBlobOuterToProve(ctx context.Context, dbTx pgx.Tx) (*state.BatchProof, *state.BlobInnerProof, error)
 	AddBlobOuterProof(ctx context.Context, proof *state.BlobOuterProof, dbTx pgx.Tx) error
 	UpdateBlobOuterProof(ctx context.Context, proof *state.BlobOuterProof, dbTx pgx.Tx) error
-	DeleteBlobOuterProof(ctx context.Context, blobOuterNumber uint64, blobOuterNumberFinal uint64, dbTx pgx.Tx) error
+	DeleteBlobOuterProofs(ctx context.Context, blobOuterNumber uint64, blobOuterNumberFinal uint64, dbTx pgx.Tx) error
+	GetBlobOuterProofsToAggregate(ctx context.Context, dbTx pgx.Tx) (*state.BlobOuterProof, *state.BlobOuterProof, error)
 }

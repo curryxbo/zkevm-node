@@ -116,7 +116,8 @@ type storage interface {
 	GetBlobOuterToProve(ctx context.Context, dbTx pgx.Tx) (*BatchProof, *BlobInnerProof, error)
 	AddBlobOuterProof(ctx context.Context, proof *BlobOuterProof, dbTx pgx.Tx) error
 	UpdateBlobOuterProof(ctx context.Context, proof *BlobOuterProof, dbTx pgx.Tx) error
-	DeleteBlobOuterProof(ctx context.Context, blobOuterNumber uint64, blobOuterNumberFinal uint64, dbTx pgx.Tx) error
+	DeleteBlobOuterProofs(ctx context.Context, blobOuterNumber uint64, blobOuterNumberFinal uint64, dbTx pgx.Tx) error
+	GetBlobOuterProofsToAggregate(ctx context.Context, dbTx pgx.Tx) (*BlobOuterProof, *BlobOuterProof, error)
 	GetLastClosedBatch(ctx context.Context, dbTx pgx.Tx) (*Batch, error)
 	GetLastClosedBatchNumber(ctx context.Context, dbTx pgx.Tx) (uint64, error)
 	UpdateBatchL2Data(ctx context.Context, batchNumber uint64, batchL2Data []byte, dbTx pgx.Tx) error
