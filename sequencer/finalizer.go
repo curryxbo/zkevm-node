@@ -41,6 +41,8 @@ type finalizer struct {
 	stateIntf        stateInterface
 	etherman         ethermanInterface
 	wipBatch         *Batch
+	pipBatch         *Batch // processing-in-progress batch is the batch that is being processing (L2 block process)
+	sipBatch         *Batch // storing-in-progress batch is the batch that is being stored/updated in the state db
 	wipL2Block       *L2Block
 	batchConstraints state.BatchConstraintsCfg
 	haltFinalizer    atomic.Bool
@@ -61,6 +63,7 @@ type finalizer struct {
 	// pending L2 blocks to process (executor)
 	pendingL2BlocksToProcess   chan *L2Block
 	pendingL2BlocksToProcessWG *sync.WaitGroup
+	l2BlockReorg               atomic.Bool
 	// pending L2 blocks to store in the state
 	pendingL2BlocksToStore   chan *L2Block
 	pendingL2BlocksToStoreWG *sync.WaitGroup
@@ -139,6 +142,7 @@ func newFinalizer(
 		dataToStream: dataToStream,
 	}
 
+	f.l2BlockReorg.Store(false)
 	f.haltFinalizer.Store(false)
 
 	return &f
@@ -375,6 +379,11 @@ func (f *finalizer) finalizeBatches(ctx context.Context) {
 	log.Debug("finalizer init loop")
 	showNotFoundTxLog := true // used to log debug only the first message when there is no txs to process
 	for {
+		if f.l2BlockReorg.Load() {
+			log.Warnf("sequencer L2 block reorg detected, processing it... %d", f.wipBatch.batchNumber)
+			f.processL2BlockReorg(ctx)
+		}
+
 		// We have reached the L2 block time, we need to close the current L2 block and open a new one
 		if f.wipL2Block.timestamp+uint64(f.cfg.L2BlockMaxDeltaTimestamp.Seconds()) <= uint64(time.Now().Unix()) {
 			f.finalizeWIPL2Block(ctx)
@@ -394,8 +403,7 @@ func (f *finalizer) finalizeBatches(ctx context.Context) {
 			firstTxProcess := true
 
 			for {
-				var err error
-				_, err = f.processTransaction(ctx, tx, firstTxProcess)
+				_, err := f.processTransaction(ctx, tx, firstTxProcess)
 				if err != nil {
 					if err == ErrEffectiveGasPriceReprocess {
 						firstTxProcess = false
@@ -753,14 +761,14 @@ func (f *finalizer) compareTxEffectiveGasPrice(ctx context.Context, tx *TxTracke
 }
 
 func (f *finalizer) updateWorkerAfterSuccessfulProcessing(ctx context.Context, txHash common.Hash, txFrom common.Address, isForced bool, result *state.ProcessBatchResponse) {
-	// Delete the transaction from the worker
+	// Delete the transaction from the worker pool
 	if isForced {
 		f.workerIntf.DeleteForcedTx(txHash, txFrom)
-		log.Debugf("forced tx %s deleted from address %s", txHash.String(), txFrom.Hex())
+		log.Debugf("forced tx %s deleted from worker, address: %s", txHash.String(), txFrom.Hex())
 		return
 	} else {
-		f.workerIntf.DeleteTx(txHash, txFrom)
-		log.Debugf("tx %s deleted from address %s", txHash.String(), txFrom.Hex())
+		f.workerIntf.MoveTxPendingToStore(txHash, txFrom)
+		log.Debugf("tx %s moved to pending to store in worker, address: %s", txHash.String(), txFrom.Hex())
 	}
 
 	txsToDelete := f.workerIntf.UpdateAfterSingleSuccessfulTxExecution(txFrom, result.ReadWriteAddresses)
@@ -819,7 +827,7 @@ func (f *finalizer) handleProcessTransactionError(ctx context.Context, result *s
 	} else {
 		// Delete the transaction from the txSorted list
 		f.workerIntf.DeleteTx(tx.Hash, tx.From)
-		log.Debugf("tx %s deleted from txSorted list", tx.HashStr)
+		log.Debugf("tx %s deleted from worker pool, address: %s", tx.HashStr, tx.From)
 
 		wg.Add(1)
 		go func() {
@@ -859,7 +867,7 @@ func (f *finalizer) logZKCounters(counters state.ZKCounters) string {
 func (f *finalizer) Halt(ctx context.Context, err error, isFatal bool) {
 	f.haltFinalizer.Store(true)
 
-	f.LogEvent(ctx, event.Level_Critical, event.EventID_FinalizerHalt, fmt.Sprintf("finalizer halted due to error, error: %s", err), nil)
+	f.LogEvent(ctx, event.Level_Critical, event.EventID_FinalizerHalt, fmt.Sprintf("finalizer halted due to error: %s", err), nil)
 
 	if isFatal {
 		log.Fatalf("fatal error on finalizer, error: %v", err)

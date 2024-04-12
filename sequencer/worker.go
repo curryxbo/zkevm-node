@@ -19,6 +19,7 @@ import (
 type Worker struct {
 	pool             map[string]*addrQueue
 	txSortedList     *txSortedList
+	pendingToStore   map[common.Hash]*TxTracker
 	workerMutex      sync.Mutex
 	state            stateInterface
 	batchConstraints state.BatchConstraintsCfg
@@ -30,6 +31,7 @@ func NewWorker(state stateInterface, constraints state.BatchConstraintsCfg, read
 	w := Worker{
 		pool:             make(map[string]*addrQueue),
 		txSortedList:     newTxSortedList(),
+		pendingToStore:   make(map[common.Hash]*TxTracker),
 		state:            state,
 		batchConstraints: constraints,
 		readyTxsCond:     readyTxsCond,
@@ -190,21 +192,34 @@ func (w *Worker) MoveTxToNotReady(txHash common.Hash, from common.Address, actua
 	return txsToDelete
 }
 
+// deleteTx deletes a regular tx from the addrQueue
+func (w *Worker) deleteTx(txHash common.Hash, addr common.Address) *TxTracker {
+	addrQueue, found := w.pool[addr.String()]
+	if found {
+		deletedTx, isReady := addrQueue.deleteTx(txHash)
+		if deletedTx != nil {
+			if isReady {
+				log.Debugf("tx %s deleted from TxSortedList", deletedTx.Hash)
+				w.txSortedList.delete(deletedTx)
+			}
+		} else {
+			log.Warnf("tx %s not found in addrQueue %s", txHash, addr)
+		}
+
+		return deletedTx
+	} else {
+		log.Warnf("addrQueue %s not found", addr)
+
+		return nil
+	}
+}
+
 // DeleteTx deletes a regular tx from the addrQueue
 func (w *Worker) DeleteTx(txHash common.Hash, addr common.Address) {
 	w.workerMutex.Lock()
 	defer w.workerMutex.Unlock()
 
-	addrQueue, found := w.pool[addr.String()]
-	if found {
-		deletedReadyTx := addrQueue.deleteTx(txHash)
-		if deletedReadyTx != nil {
-			log.Debugf("tx %s deleted from TxSortedList", deletedReadyTx.Hash.String())
-			w.txSortedList.delete(deletedReadyTx)
-		}
-	} else {
-		log.Warnf("addrQueue %s not found", addr.String())
-	}
+	w.deleteTx(txHash, addr)
 }
 
 // DeleteForcedTx deletes a forced tx from the addrQueue
@@ -246,18 +261,76 @@ func (w *Worker) UpdateTxZKCounters(txHash common.Hash, addr common.Address, use
 	}
 }
 
-// AddPendingTxToStore adds a tx to the addrQueue list of pending txs to store in the DB (trusted state)
-func (w *Worker) AddPendingTxToStore(txHash common.Hash, addr common.Address) {
+// MoveTxPendingToStore moves a tx to pending to store list
+func (w *Worker) MoveTxPendingToStore(txHash common.Hash, addr common.Address) {
+	// TODO: Add test for this function
+
 	w.workerMutex.Lock()
 	defer w.workerMutex.Unlock()
 
-	addrQueue, found := w.pool[addr.String()]
+	// Delete from worker pool and addrQueue
+	deletedTx := w.deleteTx(txHash, addr)
 
-	if found {
+	// Add tx to pending to store list in worker
+	if deletedTx != nil {
+		w.pendingToStore[txHash] = deletedTx
+	} else {
+		log.Warnf("tx %s not found when moving it to pending to store, address: %s", txHash, addr)
+	}
+
+	// Add tx to pending to store list in addrQueue
+	if addrQueue, found := w.pool[addr.String()]; found {
 		addrQueue.addPendingTxToStore(txHash)
 	} else {
-		log.Warnf("addrQueue %s not found", addr.String())
+		log.Warnf("addrQueue %s not found when moving tx %s to pending to store", addr, txHash)
 	}
+}
+
+// RestoreTxsPendingToStore restores the txs pending to store and move them to the worker pool to be processed again
+func (w *Worker) RestoreTxsPendingToStore(ctx context.Context) ([]*TxTracker, []*TxTracker) {
+	// TODO: Add test for this function
+	// TODO: We need to process restored txs in the same order we processed initially
+
+	w.workerMutex.Lock()
+	defer w.workerMutex.Unlock()
+
+	addrList := make(map[common.Address]struct{})
+	txsList := []*TxTracker{}
+
+	// Add txs pending to store to the list that will include all the txs to reprocess again
+	// and we get also the addresses of theses txs since we will need to recreate them
+	for _, tx := range w.pendingToStore {
+		txsList = append(txsList, tx)
+		addrList[tx.From] = struct{}{}
+	}
+
+	// Add txs from addrQueues that will be recreated and delete addrQueues from the pool list
+	for addr := range addrList {
+		addrQueue, found := w.pool[addr.String()]
+		if found {
+			txsList = append(txsList, addrQueue.getTransactions()...)
+			delete(w.pool, addr.String())
+		}
+	}
+
+	// Clear pendingToStore list
+	clear(w.pendingToStore)
+
+	replacedTxs := []*TxTracker{}
+	droppedTxs := []*TxTracker{}
+	// Add again in the worker the txs to restore (this will recreate addrQueue)
+	for _, restoredTx := range txsList {
+		replacedTx, dropReason := w.AddTxTracker(ctx, restoredTx)
+		if dropReason != nil {
+			droppedTxs = append(droppedTxs, restoredTx)
+		}
+		if replacedTx != nil {
+			droppedTxs = append(replacedTxs, restoredTx)
+		}
+	}
+
+	// In this scenario we shouldn't have dropped or replaced txs but we return it just in case
+	return droppedTxs, replacedTxs
 }
 
 // AddForcedTx adds a forced tx to the addrQueue
@@ -265,26 +338,30 @@ func (w *Worker) AddForcedTx(txHash common.Hash, addr common.Address) {
 	w.workerMutex.Lock()
 	defer w.workerMutex.Unlock()
 
-	addrQueue, found := w.pool[addr.String()]
-
-	if found {
+	if addrQueue, found := w.pool[addr.String()]; found {
 		addrQueue.addForcedTx(txHash)
 	} else {
 		log.Warnf("addrQueue %s not found", addr.String())
 	}
 }
 
-// DeletePendingTxToStore delete a tx from the addrQueue list of pending txs to store in the DB (trusted state)
-func (w *Worker) DeletePendingTxToStore(txHash common.Hash, addr common.Address) {
+// DeleteTxPendingToStore delete a tx from the addrQueue list of pending txs to store in the DB (trusted state)
+func (w *Worker) DeleteTxPendingToStore(txHash common.Hash, addr common.Address) {
 	w.workerMutex.Lock()
 	defer w.workerMutex.Unlock()
 
-	addrQueue, found := w.pool[addr.String()]
+	// Delete tx from pending to store list in worker
+	if _, found := w.pendingToStore[txHash]; found {
+		delete(w.pendingToStore, txHash)
+	} else {
+		log.Warnf("tx %s not found when deleting it from worker pool", txHash)
+	}
 
-	if found {
+	// Delete tx from pending to store list in addrQueue
+	if addrQueue, found := w.pool[addr.String()]; found {
 		addrQueue.deletePendingTxToStore(txHash)
 	} else {
-		log.Warnf("addrQueue %s not found", addr.String())
+		log.Warnf("addrQueue %s not found when deleting pending to store tx %s", addr, txHash)
 	}
 }
 

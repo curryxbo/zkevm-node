@@ -988,11 +988,10 @@ func TestFinalizer_closeWIPBatch(t *testing.T) {
 			}
 
 			// act
-			err := f.closeWIPBatch(ctx)
+			f.closeWIPBatch(ctx)
 
 			// assert
 			if tc.expectedErr != nil {
-				assert.Error(t, err)
 				assert.EqualError(t, err, tc.expectedErr.Error())
 				assert.ErrorIs(t, err, tc.managerErr)
 			} else {

@@ -25,11 +25,6 @@ func (_m *WorkerMock) AddForcedTx(txHash common.Hash, addr common.Address) {
 	_m.Called(txHash, addr)
 }
 
-// AddPendingTxToStore provides a mock function with given fields: txHash, addr
-func (_m *WorkerMock) AddPendingTxToStore(txHash common.Hash, addr common.Address) {
-	_m.Called(txHash, addr)
-}
-
 // AddTxTracker provides a mock function with given fields: ctx, txTracker
 func (_m *WorkerMock) AddTxTracker(ctx context.Context, txTracker *TxTracker) (*TxTracker, error) {
 	ret := _m.Called(ctx, txTracker)
@@ -65,14 +60,14 @@ func (_m *WorkerMock) DeleteForcedTx(txHash common.Hash, addr common.Address) {
 	_m.Called(txHash, addr)
 }
 
-// DeletePendingTxToStore provides a mock function with given fields: txHash, addr
-func (_m *WorkerMock) DeletePendingTxToStore(txHash common.Hash, addr common.Address) {
-	_m.Called(txHash, addr)
-}
-
 // DeleteTx provides a mock function with given fields: txHash, from
 func (_m *WorkerMock) DeleteTx(txHash common.Hash, from common.Address) {
 	_m.Called(txHash, from)
+}
+
+// DeleteTxPendingToStore provides a mock function with given fields: txHash, addr
+func (_m *WorkerMock) DeleteTxPendingToStore(txHash common.Hash, addr common.Address) {
+	_m.Called(txHash, addr)
 }
 
 // GetBestFittingTx provides a mock function with given fields: resources
@@ -103,6 +98,11 @@ func (_m *WorkerMock) GetBestFittingTx(resources state.BatchResources) (*TxTrack
 	}
 
 	return r0, r1
+}
+
+// MoveTxPendingToStore provides a mock function with given fields: txHash, addr
+func (_m *WorkerMock) MoveTxPendingToStore(txHash common.Hash, addr common.Address) {
+	_m.Called(txHash, addr)
 }
 
 // MoveTxToNotReady provides a mock function with given fields: txHash, from, actualNonce, actualBalance
@@ -150,6 +150,38 @@ func (_m *WorkerMock) NewTxTracker(tx types.Transaction, usedZKcounters state.ZK
 		r1 = rf(tx, usedZKcounters, reservedZKCouners, ip)
 	} else {
 		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// RestoreTxsPendingToStore provides a mock function with given fields: ctx
+func (_m *WorkerMock) RestoreTxsPendingToStore(ctx context.Context) ([]*TxTracker, []*TxTracker) {
+	ret := _m.Called(ctx)
+
+	if len(ret) == 0 {
+		panic("no return value specified for RestoreTxsPendingToStore")
+	}
+
+	var r0 []*TxTracker
+	var r1 []*TxTracker
+	if rf, ok := ret.Get(0).(func(context.Context) ([]*TxTracker, []*TxTracker)); ok {
+		return rf(ctx)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context) []*TxTracker); ok {
+		r0 = rf(ctx)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]*TxTracker)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context) []*TxTracker); ok {
+		r1 = rf(ctx)
+	} else {
+		if ret.Get(1) != nil {
+			r1 = ret.Get(1).([]*TxTracker)
+		}
 	}
 
 	return r0, r1
