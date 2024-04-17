@@ -14,6 +14,9 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 )
 
+//TODO: remove this
+//var simOOC bool = false
+
 // L2Block represents a wip or processed L2 block
 type L2Block struct {
 	createdAt                 time.Time
@@ -100,6 +103,8 @@ func (f *finalizer) addPendingL2BlockToStore(ctx context.Context, l2Block *L2Blo
 
 // processPendingL2Blocks processes (executor) the pending to process L2 blocks
 func (f *finalizer) processPendingL2Blocks(ctx context.Context) {
+	//rand.Seed(time.Now().UnixNano())
+
 	for {
 		select {
 		case l2Block, ok := <-f.pendingL2BlocksToProcess:
@@ -110,20 +115,22 @@ func (f *finalizer) processPendingL2Blocks(ctx context.Context) {
 
 			// if l2BlockReorg we need to "flush" the channel to discard pending L2Blocks
 			if f.l2BlockReorg.Load() {
+				f.pendingL2BlocksToProcessWG.Done()
 				continue
 			}
 
 			err := f.processL2Block(ctx, l2Block)
 
 			if err != nil {
+				//TODO: review wich errors we need to manage as L2 block reorg
 				if err == ErrProcessBatchOOC {
 					// Unexpected OOC
 					f.l2BlockReorg.Store(true)
-					continue
+				} else {
+					// Dump L2Block info
+					f.dumpL2Block(l2Block)
+					f.Halt(ctx, fmt.Errorf("error processing L2 block [%d], error: %v", l2Block.trackingNum, err), false)
 				}
-				// Dump L2Block info
-				f.dumpL2Block(l2Block)
-				f.Halt(ctx, fmt.Errorf("error processing L2 block [%d], error: %v", l2Block.trackingNum, err), false)
 			}
 
 			f.pendingL2BlocksToProcessWG.Done()
@@ -189,7 +196,15 @@ func (f *finalizer) processL2Block(ctx context.Context, l2Block *L2Block) error 
 
 	batchResponse, batchL2DataSize, err := f.executeL2Block(ctx, initialStateRoot, l2Block)
 
+	/*if !l2Block.isEmpty() && rand.Intn(5) == 1 && !simOOC {
+		err = ErrProcessBatchOOC
+		//simOOC = true
+	}*/
+
 	if err != nil {
+		if err == ErrProcessBatchOOC {
+			return err
+		}
 		return fmt.Errorf("failed to execute L2 block [%d], error: %v", l2Block.trackingNum, err)
 	}
 
@@ -238,11 +253,18 @@ func (f *finalizer) processL2Block(ctx context.Context, l2Block *L2Block) error 
 
 	f.updateFlushIDs(batchResponse.FlushID, batchResponse.StoredFlushID)
 
+	if f.pendingL2BlocksToStoreWG.Count() > 0 {
+		startWait := time.Now()
+		f.pendingL2BlocksToStoreWG.Wait()
+		log.Debugf("waiting for previous L2 block to be stored took: %v", time.Since(startWait))
+	}
 	f.addPendingL2BlockToStore(ctx, l2Block)
 
 	// metrics
 	l2Block.metrics.l2BlockTimes.sequencer = time.Since(processStart) - l2Block.metrics.l2BlockTimes.executor
-	l2Block.metrics.close(l2Block.createdAt, int64(len(l2Block.transactions)))
+	if f.cfg.SequentialProcessL2Block {
+		l2Block.metrics.close(l2Block.createdAt, int64(len(l2Block.transactions)), f.cfg.SequentialProcessL2Block)
+	}
 	f.metrics.addL2BlockMetrics(l2Block.metrics)
 
 	log.Infof("processed L2 block %d [%d], batch: %d, deltaTimestamp: %d, timestamp: %d, l1InfoTreeIndex: %d, l1InfoTreeIndexChanged: %v, initialStateRoot: %s, newStateRoot: %s, txs: %d/%d, blockHash: %s, infoRoot: %s, used counters: %s, reserved counters: %s",
@@ -503,7 +525,36 @@ func (f *finalizer) closeWIPL2Block(ctx context.Context) {
 		// We update imStateRoot (used in tx-by-tx execution) to the finalStateRoot that has been updated after process the WIP L2 Block
 		f.wipBatch.imStateRoot = f.wipBatch.finalStateRoot
 	} else {
+		if f.pendingL2BlocksToProcessWG.Count() > 0 {
+			startWait := time.Now()
+			f.pendingL2BlocksToProcessWG.Wait()
+			waitTime := time.Since(startWait)
+			log.Debugf("waiting for previous L2 block to be processed took: %v", waitTime)
+			f.wipL2Block.metrics.waitl2BlockTime = waitTime
+		}
+
 		f.addPendingL2BlockToProcess(ctx, f.wipL2Block)
+
+		f.wipL2Block.metrics.close(f.wipL2Block.createdAt, int64(len(f.wipL2Block.transactions)), f.cfg.SequentialProcessL2Block)
+
+		log.Infof("closed WIP L2 block [%d], batch: %d, deltaTimestamp: %d, timestamp: %d, l1InfoTreeIndex: %d, l1InfoTreeIndexChanged: %v, txs: %d",
+			f.wipL2Block.trackingNum, f.wipL2Block.batch.batchNumber, f.wipL2Block.deltaTimestamp, f.wipL2Block.timestamp, f.wipL2Block.l1InfoTreeExitRoot.L1InfoTreeIndex,
+			f.wipL2Block.l1InfoTreeExitRootChanged, len(f.wipL2Block.transactions))
+
+		if f.nextStateRootSync.Before(time.Now()) {
+			log.Debug("sync stateroot time reached")
+			f.waitPendingL2Blocks(ctx)
+
+			// Sanity-check: At this point f.sipBatch should be the same as the batch of the last L2 block processed
+			// (only if we haven't had a L2 block reorg just in the last block and it's the first one of the wipBatch)
+			if f.wipBatch.batchNumber != f.sipBatch.batchNumber && !(f.l2BlockReorg.Load() && f.wipBatch.countOfL2Blocks <= 2) {
+				f.Halt(ctx, fmt.Errorf("wipBatch %d doesn't match sipBatch %d after all pending L2 blocks has been processed/stored", f.wipBatch.batchNumber, f.sipBatch.batchNumber), false)
+			}
+
+			f.wipBatch.imStateRoot = f.wipBatch.finalStateRoot
+			f.nextStateRootSync = time.Now().Add(f.cfg.StateRootSyncInterval.Duration)
+			log.Infof("stateroot synced on L2 block [%d] to %s, next sync at %v", f.wipL2Block.trackingNum, f.wipBatch.imStateRoot, f.nextStateRootSync)
+		}
 	}
 
 	f.wipL2Block = nil
@@ -514,14 +565,14 @@ func (f *finalizer) openNewWIPL2Block(ctx context.Context, prevTimestamp uint64,
 	processStart := time.Now()
 
 	newL2Block := &L2Block{}
-	newL2Block.createdAt = time.Now()
+	now := time.Now()
+	newL2Block.createdAt = now
+	newL2Block.deltaTimestamp = uint32(uint64(now.Unix()) - prevTimestamp)
+	newL2Block.timestamp = prevTimestamp + uint64(newL2Block.deltaTimestamp)
 
 	// Tracking number
 	f.l2BlockCounter++
 	newL2Block.trackingNum = f.l2BlockCounter
-
-	newL2Block.deltaTimestamp = uint32(uint64(now().Unix()) - prevTimestamp)
-	newL2Block.timestamp = prevTimestamp + uint64(newL2Block.deltaTimestamp)
 
 	newL2Block.transactions = []*TxTracker{}
 
@@ -646,6 +697,18 @@ func (f *finalizer) executeNewWIPL2Block(ctx context.Context) (*state.ProcessBat
 	return batchResponse, nil
 }
 
+func (f *finalizer) waitPendingL2Blocks(ctx context.Context) {
+	// Wait until all L2 blocks are processed/discarded
+	startWait := time.Now()
+	f.pendingL2BlocksToProcessWG.Wait()
+	log.Debugf("waiting for pending L2 blocks to be processed took: %v", time.Since(startWait))
+
+	// Wait until all L2 blocks are stored
+	startWait = time.Now()
+	f.pendingL2BlocksToStoreWG.Wait()
+	log.Debugf("waiting for pending L2 blocks to be stored took: %v", time.Since(startWait))
+}
+
 func (f *finalizer) dumpL2Block(l2Block *L2Block) {
 	var blockResp *state.ProcessBlockResponse
 	if l2Block.batchResponse != nil {
@@ -659,7 +722,7 @@ func (f *finalizer) dumpL2Block(l2Block *L2Block) {
 		sLog += fmt.Sprintf("  tx[%d] hash: %s, from: %s, nonce: %d, gas: %d, gasPrice: %d, bytes: %d, egpPct: %d, used counters: %s, reserved counters: %s\n",
 			i, tx.HashStr, tx.FromStr, tx.Nonce, tx.Gas, tx.GasPrice, tx.Bytes, tx.EGPPercentage, f.logZKCounters(tx.UsedZKCounters), f.logZKCounters(tx.ReservedZKCounters))
 	}
-	log.Infof("DUMP L2 block [%d], timestamp: %d, deltaTimestamp: %d, imStateRoot: %s, l1InfoTreeIndex: %d, bytes: %d, used counters: %s, reserved counters: %s\n%s",
+	log.Infof("dump L2 block [%d], timestamp: %d, deltaTimestamp: %d, imStateRoot: %s, l1InfoTreeIndex: %d, bytes: %d, used counters: %s, reserved counters: %s\n%s",
 		l2Block.trackingNum, l2Block.timestamp, l2Block.deltaTimestamp, l2Block.imStateRoot, l2Block.l1InfoTreeExitRoot.L1InfoTreeIndex, l2Block.bytes,
 		f.logZKCounters(l2Block.usedZKCounters), f.logZKCounters(l2Block.reservedZKCounters), sLog)
 
@@ -671,7 +734,7 @@ func (f *finalizer) dumpL2Block(l2Block *L2Block) {
 				txResp.EffectivePercentage, txResp.HasGaspriceOpcode, txResp.HasBalanceOpcode)
 		}
 
-		log.Infof("DUMP L2 block %d [%d] response, timestamp: %d, parentHash: %s, coinbase: %s, ger: %s, blockHashL1: %s, gasUsed: %d, blockInfoRoot: %s, blockHash: %s, used counters: %s, reserved counters: %s\n%s",
+		log.Infof("dump L2 block %d [%d] response, timestamp: %d, parentHash: %s, coinbase: %s, ger: %s, blockHashL1: %s, gasUsed: %d, blockInfoRoot: %s, blockHash: %s, used counters: %s, reserved counters: %s\n%s",
 			blockResp.BlockNumber, l2Block.trackingNum, blockResp.Timestamp, blockResp.ParentHash, blockResp.Coinbase, blockResp.GlobalExitRoot, blockResp.BlockHashL1,
 			blockResp.GasUsed, blockResp.BlockInfoRoot, blockResp.BlockHash, f.logZKCounters(l2Block.batchResponse.UsedZkCounters), f.logZKCounters(l2Block.batchResponse.ReservedZkCounters), sLog)
 	}

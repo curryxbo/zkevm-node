@@ -198,7 +198,7 @@ func (a *addrQueue) updateCurrentNonceBalance(nonce *uint64, balance *big.Int) (
 				}
 			}
 			for _, txTracker := range txsToDelete {
-				log.Infof("deleting notReadyTx with nonce %d from addrQueue %s", txTracker.Nonce, a.fromStr)
+				log.Infof("deleting notReadyTx with nonce %d from addrQueue %s, reason: %s", txTracker.Nonce, a.fromStr, *txTracker.FailedReason)
 				delete(a.notReadyTxs, txTracker.Nonce)
 			}
 		}

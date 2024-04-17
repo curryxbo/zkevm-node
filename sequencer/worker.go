@@ -19,8 +19,9 @@ import (
 type Worker struct {
 	pool             map[string]*addrQueue
 	txSortedList     *txSortedList
-	pendingToStore   map[common.Hash]*TxTracker
-	workerMutex      sync.Mutex
+	pendingToStore   []*TxTracker
+	reorgedTxs       []*TxTracker
+	workerMutex      *sync.Mutex
 	state            stateInterface
 	batchConstraints state.BatchConstraintsCfg
 	readyTxsCond     *timeoutCond
@@ -30,8 +31,9 @@ type Worker struct {
 func NewWorker(state stateInterface, constraints state.BatchConstraintsCfg, readyTxsCond *timeoutCond) *Worker {
 	w := Worker{
 		pool:             make(map[string]*addrQueue),
+		workerMutex:      new(sync.Mutex),
 		txSortedList:     newTxSortedList(),
-		pendingToStore:   make(map[common.Hash]*TxTracker),
+		pendingToStore:   []*TxTracker{},
 		state:            state,
 		batchConstraints: constraints,
 		readyTxsCond:     readyTxsCond,
@@ -47,25 +49,30 @@ func (w *Worker) NewTxTracker(tx types.Transaction, usedZKCounters state.ZKCount
 
 // AddTxTracker adds a new Tx to the Worker
 func (w *Worker) AddTxTracker(ctx context.Context, tx *TxTracker) (replacedTx *TxTracker, dropReason error) {
-	w.workerMutex.Lock()
+	return w.addTxTracker(ctx, tx, w.workerMutex)
+}
+
+// addTxTracker adds a new Tx to the Worker
+func (w *Worker) addTxTracker(ctx context.Context, tx *TxTracker, mutex *sync.Mutex) (replacedTx *TxTracker, dropReason error) {
+	mutexLock(mutex)
 
 	// Make sure the IP is valid.
 	if tx.IP != "" && !pool.IsValidIP(tx.IP) {
-		w.workerMutex.Unlock()
+		mutexUnlock(mutex)
 		return nil, pool.ErrInvalidIP
 	}
 
 	// Make sure the transaction's reserved ZKCounters are within the constraints.
 	if !w.batchConstraints.IsWithinConstraints(tx.ReservedZKCounters) {
 		log.Errorf("outOfCounters error (node level) for tx %s", tx.Hash.String())
-		w.workerMutex.Unlock()
+		mutexUnlock(mutex)
 		return nil, pool.ErrOutOfCounters
 	}
 
 	addr, found := w.pool[tx.FromStr]
 	if !found {
 		// Unlock the worker to let execute other worker functions while creating the new AddrQueue
-		w.workerMutex.Unlock()
+		mutexUnlock(mutex)
 
 		root, err := w.state.GetLastStateRoot(ctx, nil)
 		if err != nil {
@@ -89,7 +96,7 @@ func (w *Worker) AddTxTracker(ctx context.Context, tx *TxTracker) (replacedTx *T
 		addr = newAddrQueue(tx.From, nonce.Uint64(), balance)
 
 		// Lock again the worker
-		w.workerMutex.Lock()
+		mutexLock(mutex)
 
 		w.pool[tx.FromStr] = addr
 		log.Debugf("new addrQueue %s created (nonce: %d, balance: %s)", tx.FromStr, nonce.Uint64(), balance.String())
@@ -101,7 +108,7 @@ func (w *Worker) AddTxTracker(ctx context.Context, tx *TxTracker) (replacedTx *T
 	newReadyTx, prevReadyTx, repTx, dropReason = addr.addTx(tx)
 	if dropReason != nil {
 		log.Infof("dropped tx %s from addrQueue %s, reason: %s", tx.HashStr, tx.FromStr, dropReason.Error())
-		w.workerMutex.Unlock()
+		mutexUnlock(mutex)
 		return repTx, dropReason
 	}
 
@@ -119,7 +126,7 @@ func (w *Worker) AddTxTracker(ctx context.Context, tx *TxTracker) (replacedTx *T
 		log.Debugf("tx %s (nonce: %d, gasPrice: %d, addr: %s) has been replaced", repTx.HashStr, repTx.Nonce, repTx.GasPrice, tx.FromStr)
 	}
 
-	w.workerMutex.Unlock()
+	mutexUnlock(mutex)
 	return repTx, nil
 }
 
@@ -273,7 +280,8 @@ func (w *Worker) MoveTxPendingToStore(txHash common.Hash, addr common.Address) {
 
 	// Add tx to pending to store list in worker
 	if deletedTx != nil {
-		w.pendingToStore[txHash] = deletedTx
+		w.pendingToStore = append(w.pendingToStore, deletedTx)
+		log.Debugf("tx %s add to pendingToStore, order: %d", deletedTx.Hash, len(w.pendingToStore))
 	} else {
 		log.Warnf("tx %s not found when moving it to pending to store, address: %s", txHash, addr)
 	}
@@ -292,16 +300,18 @@ func (w *Worker) RestoreTxsPendingToStore(ctx context.Context) ([]*TxTracker, []
 	// TODO: We need to process restored txs in the same order we processed initially
 
 	w.workerMutex.Lock()
-	defer w.workerMutex.Unlock()
 
 	addrList := make(map[common.Address]struct{})
 	txsList := []*TxTracker{}
+	w.reorgedTxs = []*TxTracker{}
 
 	// Add txs pending to store to the list that will include all the txs to reprocess again
-	// and we get also the addresses of theses txs since we will need to recreate them
-	for _, tx := range w.pendingToStore {
-		txsList = append(txsList, tx)
-		addrList[tx.From] = struct{}{}
+	// Add txs to the reorgedTxs list to get them in the order which they were processed before the L2 block reorg
+	// Get also the addresses of theses txs since we will need to recreate them
+	for _, txToStore := range w.pendingToStore {
+		txsList = append(txsList, txToStore)
+		w.reorgedTxs = append(w.reorgedTxs, txToStore)
+		addrList[txToStore.From] = struct{}{}
 	}
 
 	// Add txs from addrQueues that will be recreated and delete addrQueues from the pool list
@@ -309,18 +319,27 @@ func (w *Worker) RestoreTxsPendingToStore(ctx context.Context) ([]*TxTracker, []
 		addrQueue, found := w.pool[addr.String()]
 		if found {
 			txsList = append(txsList, addrQueue.getTransactions()...)
+			if addrQueue.readyTx != nil {
+				// Delete readyTx from the txSortedList
+				w.txSortedList.delete(addrQueue.readyTx)
+			}
+			// Delete the addrQueue to recreate it later
 			delete(w.pool, addr.String())
 		}
 	}
 
 	// Clear pendingToStore list
-	clear(w.pendingToStore)
+	w.pendingToStore = []*TxTracker{}
+
+	for _, tx := range w.reorgedTxs {
+		log.Infof("reorged tx %s, nonce %d, from: %s", tx.Hash, tx.Nonce, tx.From)
+	}
 
 	replacedTxs := []*TxTracker{}
 	droppedTxs := []*TxTracker{}
-	// Add again in the worker the txs to restore (this will recreate addrQueue)
+	// Add again in the worker the txs to restore (this will recreate addrQueues)
 	for _, restoredTx := range txsList {
-		replacedTx, dropReason := w.AddTxTracker(ctx, restoredTx)
+		replacedTx, dropReason := w.addTxTracker(ctx, restoredTx, nil)
 		if dropReason != nil {
 			droppedTxs = append(droppedTxs, restoredTx)
 		}
@@ -328,6 +347,8 @@ func (w *Worker) RestoreTxsPendingToStore(ctx context.Context) ([]*TxTracker, []
 			droppedTxs = append(replacedTxs, restoredTx)
 		}
 	}
+
+	w.workerMutex.Unlock()
 
 	// In this scenario we shouldn't have dropped or replaced txs but we return it just in case
 	return droppedTxs, replacedTxs
@@ -351,9 +372,14 @@ func (w *Worker) DeleteTxPendingToStore(txHash common.Hash, addr common.Address)
 	defer w.workerMutex.Unlock()
 
 	// Delete tx from pending to store list in worker
-	if _, found := w.pendingToStore[txHash]; found {
-		delete(w.pendingToStore, txHash)
-	} else {
+	found := false
+	for i, txToStore := range w.pendingToStore {
+		if txToStore.Hash == txHash {
+			found = true
+			w.pendingToStore = append(w.pendingToStore[:i], w.pendingToStore[i+1:]...)
+		}
+	}
+	if !found {
 		log.Warnf("tx %s not found when deleting it from worker pool", txHash)
 	}
 
@@ -369,6 +395,21 @@ func (w *Worker) DeleteTxPendingToStore(txHash common.Hash, addr common.Address)
 func (w *Worker) GetBestFittingTx(resources state.BatchResources) (*TxTracker, error) {
 	w.workerMutex.Lock()
 	defer w.workerMutex.Unlock()
+
+	// If we are processing a L2 block reorg we return the next tx in the reorg list
+	for len(w.reorgedTxs) > 0 {
+		reorgedTx := w.reorgedTxs[0]
+		w.reorgedTxs = w.reorgedTxs[1:]
+		if addrQueue, found := w.pool[reorgedTx.FromStr]; found {
+			if addrQueue.readyTx != nil && addrQueue.readyTx.Hash == reorgedTx.Hash {
+				return reorgedTx, nil
+			} else {
+				log.Warnf("reorged tx %s is not the ready tx for addrQueue %s, this shouldn't happen", reorgedTx.Hash, reorgedTx.From)
+			}
+		} else {
+			log.Warnf("addrQueue %s for reorged tx %s not found, this shouldn't happen", reorgedTx.From, reorgedTx.Hash)
+		}
+	}
 
 	if w.txSortedList.len() == 0 {
 		return nil, ErrTransactionsListEmpty
@@ -457,5 +498,17 @@ func (w *Worker) addTxToSortedList(readyTx *TxTracker) {
 		w.readyTxsCond.L.Lock()
 		w.readyTxsCond.Signal()
 		w.readyTxsCond.L.Unlock()
+	}
+}
+
+func mutexLock(mutex *sync.Mutex) {
+	if mutex != nil {
+		mutex.Lock()
+	}
+}
+
+func mutexUnlock(mutex *sync.Mutex) {
+	if mutex != nil {
+		mutex.Unlock()
 	}
 }

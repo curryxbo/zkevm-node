@@ -46,6 +46,8 @@ type finalizer struct {
 	wipL2Block       *L2Block
 	batchConstraints state.BatchConstraintsCfg
 	haltFinalizer    atomic.Bool
+	// stateroot sync
+	nextStateRootSync time.Time
 	// forced batches
 	nextForcedBatches       []state.ForcedBatch
 	nextForcedBatchDeadline int64
@@ -62,11 +64,11 @@ type finalizer struct {
 	effectiveGasPrice *pool.EffectiveGasPrice
 	// pending L2 blocks to process (executor)
 	pendingL2BlocksToProcess   chan *L2Block
-	pendingL2BlocksToProcessWG *sync.WaitGroup
+	pendingL2BlocksToProcessWG *WaitGroupCount
 	l2BlockReorg               atomic.Bool
 	// pending L2 blocks to store in the state
 	pendingL2BlocksToStore   chan *L2Block
-	pendingL2BlocksToStoreWG *sync.WaitGroup
+	pendingL2BlocksToStoreWG *WaitGroupCount
 	// L2 block counter for tracking purposes
 	l2BlockCounter uint64
 	// executor flushid control
@@ -109,6 +111,8 @@ func newFinalizer(
 		stateIntf:        stateIntf,
 		etherman:         etherman,
 		batchConstraints: batchConstraints,
+		// stateroot sync
+		nextStateRootSync: time.Now().Add(cfg.StateRootSyncInterval.Duration),
 		// forced batches
 		nextForcedBatches:       make([]state.ForcedBatch, 0),
 		nextForcedBatchDeadline: 0,
@@ -123,10 +127,10 @@ func newFinalizer(
 		effectiveGasPrice: pool.NewEffectiveGasPrice(poolCfg.EffectiveGasPrice),
 		// pending L2 blocks to process (executor)
 		pendingL2BlocksToProcess:   make(chan *L2Block, pendingL2BlocksBufferSize),
-		pendingL2BlocksToProcessWG: new(sync.WaitGroup),
+		pendingL2BlocksToProcessWG: new(WaitGroupCount),
 		// pending L2 blocks to store in the state
 		pendingL2BlocksToStore:   make(chan *L2Block, pendingL2BlocksBufferSize),
-		pendingL2BlocksToStoreWG: new(sync.WaitGroup),
+		pendingL2BlocksToStoreWG: new(WaitGroupCount),
 		storedFlushID:            0,
 		// executor flushid control
 		proverID:           "",
@@ -349,8 +353,8 @@ func (f *finalizer) checkL1InfoTreeUpdate(ctx context.Context) {
 		if firstL1InfoRootUpdate || l1InfoRoot.L1InfoTreeIndex > f.lastL1InfoTree.L1InfoTreeIndex {
 			log.Infof("received new l1InfoRoot %s, index: %d, l1Block: %d", l1InfoRoot.L1InfoTreeRoot, l1InfoRoot.L1InfoTreeIndex, l1InfoRoot.BlockNumber)
 
-			// Check if new l1InfoRoot is valid. We skip it if l1InfoRoot.BlockNumber == 0 (empty tree)
-			if l1InfoRoot.BlockNumber > 0 {
+			// Check if new l1InfoRoot is valid. We skip it if l1InfoTreeIndex is 0 (it's a special case)
+			if l1InfoRoot.L1InfoTreeIndex > 0 {
 				valid, err := f.checkValidL1InfoRoot(ctx, l1InfoRoot)
 				if err != nil {
 					log.Errorf("error validating new l1InfoRoot, index: %d, error: %v", l1InfoRoot.L1InfoTreeIndex, err)
@@ -380,12 +384,11 @@ func (f *finalizer) finalizeBatches(ctx context.Context) {
 	showNotFoundTxLog := true // used to log debug only the first message when there is no txs to process
 	for {
 		if f.l2BlockReorg.Load() {
-			log.Warnf("sequencer L2 block reorg detected, processing it... %d", f.wipBatch.batchNumber)
 			f.processL2BlockReorg(ctx)
 		}
 
 		// We have reached the L2 block time, we need to close the current L2 block and open a new one
-		if f.wipL2Block.timestamp+uint64(f.cfg.L2BlockMaxDeltaTimestamp.Seconds()) <= uint64(time.Now().Unix()) {
+		if f.wipL2Block.createdAt.Add(f.cfg.L2BlockMaxDeltaTimestamp.Duration).Before(time.Now()) {
 			f.finalizeWIPL2Block(ctx)
 		}
 

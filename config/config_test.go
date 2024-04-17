@@ -102,6 +102,10 @@ func Test_Defaults(t *testing.T) {
 			expectedValue: uint32(10),
 		},
 		{
+			path:          "Sequencer.Finalizer.StateRootSyncInterval",
+			expectedValue: types.NewDuration(3600 * time.Second),
+		},
+		{
 			path:          "Sequencer.Finalizer.ForcedBatchesL1BlockConfirmations",
 			expectedValue: uint64(64),
 		},
