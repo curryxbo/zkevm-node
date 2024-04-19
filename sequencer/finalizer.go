@@ -519,7 +519,7 @@ func (f *finalizer) processTransaction(ctx context.Context, tx *TxTracker, first
 				loss := new(big.Int).Sub(tx.EffectiveGasPrice, txGasPrice)
 				// If loss > 0 the warning message indicating we loss fee for thix tx
 				if loss.Cmp(new(big.Int).SetUint64(0)) == 1 {
-					log.Warnf("egp-loss: gasPrice: %d, effectiveGasPrice1: %d, loss: %d, tx: %s", txGasPrice, tx.EffectiveGasPrice, loss, tx.HashStr)
+					log.Infof("egp-loss: gasPrice: %d, effectiveGasPrice1: %d, loss: %d, tx: %s", txGasPrice, tx.EffectiveGasPrice, loss, tx.HashStr)
 				}
 
 				tx.EffectiveGasPrice.Set(txGasPrice)

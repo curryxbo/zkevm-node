@@ -78,7 +78,7 @@ func (f *finalizer) setWIPBatch(ctx context.Context, wipStateBatch *state.Batch)
 		wipStateBatchCountOfTxs = wipStateBatchCountOfTxs + len(rawBlock.Transactions)
 	}
 
-	remainingResources := getMaxRemainingResources(f.batchConstraints)
+	remainingResources := getMaxBatchResources(f.batchConstraints)
 	overflow, overflowResource := remainingResources.Sub(wipStateBatch.Resources)
 	if overflow {
 		return nil, fmt.Errorf("failed to subtract used resources when setting the WIP batch to the state batch %d, overflow resource: %s", wipStateBatch.BatchNumber, overflowResource)
@@ -152,8 +152,6 @@ func (f *finalizer) processL2BlockReorg(ctx context.Context) error {
 		// the first tx reorged we can have a batch resource overflow (if we have closed the sip batch for this reason) and we will return
 		// the reorged tx to the worker (calling UpdateTxZKCounters) missing the order in which we need to reprocess the reorged txs
 
-		log.Infof("closing sip batch %d before continue processing L2 block reorg", f.sipBatch.batchNumber)
-
 		dbTx, err := f.stateIntf.BeginStateTransaction(ctx)
 		if err != nil {
 			return fmt.Errorf("error creating db transaction to close sip batch %d, error: %v", f.sipBatch.batchNumber, err)
@@ -184,6 +182,9 @@ func (f *finalizer) processL2BlockReorg(ctx context.Context) error {
 	f.initWIPBatch(ctx)
 
 	f.initWIPL2Block(ctx)
+
+	// Since when processing the L2 block reorg we sync the state root we can reset next state root syncing
+	f.scheduleNextStateRootSync()
 
 	f.l2BlockReorg.Store(false)
 
@@ -297,7 +298,7 @@ func (f *finalizer) closeAndOpenNewWIPBatch(ctx context.Context, closeReason sta
 
 // openNewWIPBatch opens a new batch in the state and returns it as WipBatch
 func (f *finalizer) openNewWIPBatch(ctx context.Context, batchNumber uint64, stateRoot common.Hash) *Batch {
-	maxRemainingResources := getMaxRemainingResources(f.batchConstraints)
+	maxRemainingResources := getMaxBatchResources(f.batchConstraints)
 
 	return &Batch{
 		batchNumber:             batchNumber,
@@ -580,8 +581,8 @@ func getUsedBatchResources(constraints state.BatchConstraintsCfg, remainingResou
 	}
 }
 
-// getMaxRemainingResources returns the max resources that can be used in a batch
-func getMaxRemainingResources(constraints state.BatchConstraintsCfg) state.BatchResources {
+// getMaxBatchResources returns the max resources that can be used in a batch
+func getMaxBatchResources(constraints state.BatchConstraintsCfg) state.BatchResources {
 	return state.BatchResources{
 		ZKCounters: state.ZKCounters{
 			GasUsed:          constraints.MaxCumulativeGasUsed,

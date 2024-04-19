@@ -214,9 +214,6 @@ func (f *finalizer) processL2Block(ctx context.Context, l2Block *L2Block) error 
 	}*/
 
 	if err != nil {
-		if err == ErrProcessBatchOOC {
-			return err
-		}
 		return fmt.Errorf("failed to execute L2 block [%d], error: %v", l2Block.trackingNum, err)
 	}
 
@@ -255,9 +252,9 @@ func (f *finalizer) processL2Block(ctx context.Context, l2Block *L2Block) error 
 		overflowLog := fmt.Sprintf("L2 block %d [%d] reserved resources exceeds the remaining batch %d resources, overflow resource: %s, batch counters: %s, L2 block reserved counters: %s, batch bytes: %d, L2 block bytes: %d",
 			blockResponse.BlockNumber, l2Block.trackingNum, l2Block.batch.batchNumber, overflowResource, f.logZKCounters(l2Block.batch.finalRemainingResources.ZKCounters), f.logZKCounters(batchResponse.ReservedZkCounters), l2Block.batch.finalRemainingResources.Bytes, batchL2DataSize)
 
-		log.Warnf(overflowLog)
-
 		f.LogEvent(ctx, event.Level_Warning, event.EventID_ReservedZKCountersOverflow, overflowLog, nil)
+
+		return fmt.Errorf(overflowLog)
 	}
 
 	// Update finalStateRoot of the batch to the newStateRoot for the L2 block
@@ -549,9 +546,19 @@ func (f *finalizer) closeWIPL2Block(ctx context.Context) {
 
 		f.wipL2Block.metrics.close(f.wipL2Block.createdAt, int64(len(f.wipL2Block.transactions)), f.cfg.SequentialProcessL2Block)
 
-		log.Infof("closed WIP L2 block [%d], batch: %d, deltaTimestamp: %d, timestamp: %d, l1InfoTreeIndex: %d, l1InfoTreeIndexChanged: %v, txs: %d",
+		l2BlockResourcesUsed := state.BatchResources{}
+		l2BlockResourcesReserved := state.BatchResources{}
+
+		for _, tx := range f.wipL2Block.transactions {
+			l2BlockResourcesUsed.ZKCounters.SumUp(tx.UsedZKCounters)
+			l2BlockResourcesReserved.ZKCounters.SumUp(tx.ReservedZKCounters)
+		}
+		l2BlockResourcesUsed.ZKCounters.SumUp(f.wipL2Block.usedZKCounters)
+		l2BlockResourcesReserved.ZKCounters.SumUp(f.wipL2Block.reservedZKCounters)
+
+		log.Infof("closed WIP L2 block [%d], batch: %d, deltaTimestamp: %d, timestamp: %d, l1InfoTreeIndex: %d, l1InfoTreeIndexChanged: %v, txs: %d, used counters: %s, reserved counters: %s",
 			f.wipL2Block.trackingNum, f.wipL2Block.batch.batchNumber, f.wipL2Block.deltaTimestamp, f.wipL2Block.timestamp, f.wipL2Block.l1InfoTreeExitRoot.L1InfoTreeIndex,
-			f.wipL2Block.l1InfoTreeExitRootChanged, len(f.wipL2Block.transactions))
+			f.wipL2Block.l1InfoTreeExitRootChanged, len(f.wipL2Block.transactions), f.logZKCounters(l2BlockResourcesUsed.ZKCounters), f.logZKCounters(l2BlockResourcesReserved.ZKCounters))
 
 		if f.nextStateRootSync.Before(time.Now()) {
 			log.Debug("sync stateroot time reached")
@@ -564,7 +571,7 @@ func (f *finalizer) closeWIPL2Block(ctx context.Context) {
 			}
 
 			f.wipBatch.imStateRoot = f.wipBatch.finalStateRoot
-			f.nextStateRootSync = time.Now().Add(f.cfg.StateRootSyncInterval.Duration)
+			f.scheduleNextStateRootSync()
 			log.Infof("stateroot synced on L2 block [%d] to %s, next sync at %v", f.wipL2Block.trackingNum, f.wipBatch.imStateRoot, f.nextStateRootSync)
 		}
 	}
@@ -707,6 +714,10 @@ func (f *finalizer) executeNewWIPL2Block(ctx context.Context) (*state.ProcessBat
 	}
 
 	return batchResponse, nil
+}
+
+func (f *finalizer) scheduleNextStateRootSync() {
+	f.nextStateRootSync = time.Now().Add(f.cfg.StateRootSyncInterval.Duration)
 }
 
 func (f *finalizer) waitPendingL2Blocks(ctx context.Context) {

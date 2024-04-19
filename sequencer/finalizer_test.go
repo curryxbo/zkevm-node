@@ -2036,7 +2036,7 @@ func TestFinalizer_isBatchAlmostFull(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			// arrange
 			f = setupFinalizer(true)
-			maxRemainingResource := getMaxRemainingResources(bc)
+			maxRemainingResource := getMaxBatchResources(bc)
 			f.wipBatch.imRemainingResources = tc.modifyResourceFunc(maxRemainingResource)
 
 			// act
@@ -2097,7 +2097,7 @@ func TestFinalizer_getConstraintThresholdUint32(t *testing.T) {
 
 func TestFinalizer_getRemainingResources(t *testing.T) {
 	// act
-	remainingResources := getMaxRemainingResources(bc)
+	remainingResources := getMaxBatchResources(bc)
 
 	// assert
 	assert.Equal(t, remainingResources.ZKCounters.GasUsed, bc.MaxCumulativeGasUsed)
@@ -2195,7 +2195,7 @@ func setupFinalizer(withWipBatch bool) *finalizer {
 			initialStateRoot:     oldHash,
 			imStateRoot:          newHash,
 			timestamp:            now(),
-			imRemainingResources: getMaxRemainingResources(bc),
+			imRemainingResources: getMaxBatchResources(bc),
 			closingReason:        state.EmptyClosingReason,
 		}
 	}
