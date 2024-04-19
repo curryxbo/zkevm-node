@@ -142,12 +142,42 @@ func (f *finalizer) initWIPBatch(ctx context.Context) {
 		f.wipBatch.batchNumber, f.wipBatch.initialStateRoot, f.wipBatch.finalStateRoot, f.wipBatch.coinbase)
 }
 
-func (f *finalizer) processL2BlockReorg(ctx context.Context) {
-	warnmsg := fmt.Sprintf("sequencer L2 block reorg detected, processing it... %d", f.wipBatch.batchNumber)
-	log.Warnf(warnmsg)
-	f.LogEvent(ctx, event.Level_Critical, event.EventID_L2BlockReorg, warnmsg, nil)
-
+func (f *finalizer) processL2BlockReorg(ctx context.Context) error {
 	f.waitPendingL2Blocks(ctx)
+
+	if f.sipBatch != nil && f.sipBatch.batchNumber != f.wipBatch.batchNumber {
+		// If the sip batch is the previous to the current wip batch and it's still open these means that the L2 block that caused
+		// the reorg is the first L2 block of the wip batch, therefore we need to close sip batch before to continue.
+		// If we don't close the sip batch the initWIPBatch function will load the sip batch as the initial one and when trying to reprocess
+		// the first tx reorged we can have a batch resource overflow (if we have closed the sip batch for this reason) and we will return
+		// the reorged tx to the worker (calling UpdateTxZKCounters) missing the order in which we need to reprocess the reorged txs
+
+		log.Infof("closing sip batch %d before continue processing L2 block reorg", f.sipBatch.batchNumber)
+
+		dbTx, err := f.stateIntf.BeginStateTransaction(ctx)
+		if err != nil {
+			return fmt.Errorf("error creating db transaction to close sip batch %d, error: %v", f.sipBatch.batchNumber, err)
+		}
+
+		// Close sip batch (close in statedb)
+		err = f.closeSIPBatch(ctx, dbTx)
+		if err != nil {
+			return fmt.Errorf("failed to close sip batch %d, error: %v", f.sipBatch.batchNumber, err)
+		}
+
+		if err != nil {
+			rollbackErr := dbTx.Rollback(ctx)
+			if rollbackErr != nil {
+				return fmt.Errorf("error when rollback db transaction to close sip batch %d, error: %v", f.sipBatch.batchNumber, rollbackErr)
+			}
+			return err
+		}
+
+		err = dbTx.Commit(ctx)
+		if err != nil {
+			return fmt.Errorf("error when commit db transaction to close sip batch %d, error: %v", f.sipBatch.batchNumber, err)
+		}
+	}
 
 	f.workerIntf.RestoreTxsPendingToStore(ctx)
 
@@ -156,6 +186,8 @@ func (f *finalizer) processL2BlockReorg(ctx context.Context) {
 	f.initWIPL2Block(ctx)
 
 	f.l2BlockReorg.Store(false)
+
+	return nil
 }
 
 // finalizeWIPBatch closes the current batch and opens a new one, potentially processing forced batches between the batch is closed and the resulting new empty batch

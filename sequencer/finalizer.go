@@ -66,6 +66,7 @@ type finalizer struct {
 	pendingL2BlocksToProcess   chan *L2Block
 	pendingL2BlocksToProcessWG *WaitGroupCount
 	l2BlockReorg               atomic.Bool
+	lastL2BlockWasReorg        bool
 	// pending L2 blocks to store in the state
 	pendingL2BlocksToStore   chan *L2Block
 	pendingL2BlocksToStoreWG *WaitGroupCount
@@ -384,7 +385,10 @@ func (f *finalizer) finalizeBatches(ctx context.Context) {
 	showNotFoundTxLog := true // used to log debug only the first message when there is no txs to process
 	for {
 		if f.l2BlockReorg.Load() {
-			f.processL2BlockReorg(ctx)
+			err := f.processL2BlockReorg(ctx)
+			if err != nil {
+				log.Errorf("error processing L2 block reorg, error: %v", err)
+			}
 		}
 
 		// We have reached the L2 block time, we need to close the current L2 block and open a new one

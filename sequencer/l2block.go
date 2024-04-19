@@ -14,7 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 )
 
-//TODO: remove this
+// TODO: remove this
 //var simOOC bool = false
 
 // L2Block represents a wip or processed L2 block
@@ -122,15 +122,27 @@ func (f *finalizer) processPendingL2Blocks(ctx context.Context) {
 			err := f.processL2Block(ctx, l2Block)
 
 			if err != nil {
-				//TODO: review wich errors we need to manage as L2 block reorg
-				if err == ErrProcessBatchOOC {
-					// Unexpected OOC
-					f.l2BlockReorg.Store(true)
+				halt := false
+				if f.lastL2BlockWasReorg {
+					// We had 2 consecutives reorg in the same L2 block, we halt after log/dump the info
+					halt = true
 				} else {
-					// Dump L2Block info
-					f.dumpL2Block(l2Block)
-					f.Halt(ctx, fmt.Errorf("error processing L2 block [%d], error: %v", l2Block.trackingNum, err), false)
+					f.l2BlockReorg.Store(true)
+					f.lastL2BlockWasReorg = true
 				}
+
+				warnmsg := fmt.Sprintf("sequencer L2 block [%d] reorg detected, batch: %d, processing it...", l2Block.trackingNum, l2Block.batch.batchNumber)
+				log.Warnf(warnmsg)
+				f.LogEvent(ctx, event.Level_Critical, event.EventID_L2BlockReorg, warnmsg, nil)
+
+				// Dump L2Block info
+				f.dumpL2Block(l2Block)
+
+				if halt {
+					f.Halt(ctx, fmt.Errorf("consecutives L2 block reorgs in the same L2 block [%d]", l2Block.trackingNum), false)
+				}
+			} else {
+				f.lastL2BlockWasReorg = false
 			}
 
 			f.pendingL2BlocksToProcessWG.Done()
@@ -196,9 +208,9 @@ func (f *finalizer) processL2Block(ctx context.Context, l2Block *L2Block) error 
 
 	batchResponse, batchL2DataSize, err := f.executeL2Block(ctx, initialStateRoot, l2Block)
 
-	/*if !l2Block.isEmpty() && rand.Intn(5) == 1 && !simOOC {
+	/*if !l2Block.isEmpty() && rand.Intn(6) == 1 {
 		err = ErrProcessBatchOOC
-		//simOOC = true
+		simOOC = true
 	}*/
 
 	if err != nil {
