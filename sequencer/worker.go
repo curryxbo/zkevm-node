@@ -25,6 +25,7 @@ type Worker struct {
 	state            stateInterface
 	batchConstraints state.BatchConstraintsCfg
 	readyTxsCond     *timeoutCond
+	wipTx            *TxTracker
 }
 
 // NewWorker creates an init a worker
@@ -67,6 +68,12 @@ func (w *Worker) addTxTracker(ctx context.Context, tx *TxTracker, mutex *sync.Mu
 		log.Errorf("outOfCounters error (node level) for tx %s", tx.Hash.String())
 		mutexUnlock(mutex)
 		return nil, pool.ErrOutOfCounters
+	}
+
+	if (w.wipTx != nil) && (w.wipTx.FromStr == tx.FromStr) && (w.wipTx.Nonce == tx.Nonce) {
+		log.Infof("adding tx %s (nonce %d) from address %s that matches current processing tx %s (nonce %d), rejecting it as duplicated nonce", tx.Hash, tx.Nonce, tx.From, w.wipTx.Hash, w.wipTx.Nonce)
+		w.workerMutex.Unlock()
+		return nil, ErrDuplicatedNonce
 	}
 
 	addr, found := w.pool[tx.FromStr]
@@ -183,6 +190,8 @@ func (w *Worker) MoveTxToNotReady(txHash common.Hash, from common.Address, actua
 	defer w.workerMutex.Unlock()
 	log.Debugf("move tx %s to notReady (from: %s, actualNonce: %d, actualBalance: %s)", txHash.String(), from.String(), actualNonce, actualBalance.String())
 
+	w.resetWipTx(txHash)
+
 	addrQueue, found := w.pool[from.String()]
 	if found {
 		// Sanity check. The txHash must be the readyTx
@@ -225,6 +234,8 @@ func (w *Worker) deleteTx(txHash common.Hash, addr common.Address) *TxTracker {
 func (w *Worker) DeleteTx(txHash common.Hash, addr common.Address) {
 	w.workerMutex.Lock()
 	defer w.workerMutex.Unlock()
+
+	w.resetWipTx(txHash)
 
 	w.deleteTx(txHash, addr)
 }
@@ -396,6 +407,8 @@ func (w *Worker) GetBestFittingTx(resources state.BatchResources) (*TxTracker, e
 	w.workerMutex.Lock()
 	defer w.workerMutex.Unlock()
 
+	w.wipTx = nil
+
 	// If we are processing a L2 block reorg we return the next tx in the reorg list
 	for len(w.reorgedTxs) > 0 {
 		reorgedTx := w.reorgedTxs[0]
@@ -460,6 +473,7 @@ func (w *Worker) GetBestFittingTx(resources state.BatchResources) (*TxTracker, e
 
 	if foundAt != -1 {
 		log.Debugf("best fitting tx %s found at index %d with gasPrice %d", tx.HashStr, foundAt, tx.GasPrice)
+		w.wipTx = tx
 		return tx, nil
 	} else {
 		return nil, ErrNoFittingTransaction
@@ -498,6 +512,12 @@ func (w *Worker) addTxToSortedList(readyTx *TxTracker) {
 		w.readyTxsCond.L.Lock()
 		w.readyTxsCond.Signal()
 		w.readyTxsCond.L.Unlock()
+	}
+}
+
+func (w *Worker) resetWipTx(txHash common.Hash) {
+	if (w.wipTx != nil) && (w.wipTx.Hash == txHash) {
+		w.wipTx = nil
 	}
 }
 
