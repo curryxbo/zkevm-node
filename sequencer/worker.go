@@ -72,7 +72,7 @@ func (w *Worker) addTxTracker(ctx context.Context, tx *TxTracker, mutex *sync.Mu
 
 	if (w.wipTx != nil) && (w.wipTx.FromStr == tx.FromStr) && (w.wipTx.Nonce == tx.Nonce) {
 		log.Infof("adding tx %s (nonce %d) from address %s that matches current processing tx %s (nonce %d), rejecting it as duplicated nonce", tx.Hash, tx.Nonce, tx.From, w.wipTx.Hash, w.wipTx.Nonce)
-		w.workerMutex.Unlock()
+		mutexUnlock(mutex)
 		return nil, ErrDuplicatedNonce
 	}
 
@@ -341,6 +341,8 @@ func (w *Worker) RestoreTxsPendingToStore(ctx context.Context) ([]*TxTracker, []
 
 	// Clear pendingToStore list
 	w.pendingToStore = []*TxTracker{}
+	// Clear wip tx
+	w.wipTx = nil
 
 	for _, tx := range w.reorgedTxs {
 		log.Infof("reorged tx %s, nonce %d, from: %s", tx.Hash, tx.Nonce, tx.From)
