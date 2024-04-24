@@ -2,6 +2,7 @@ package sequencer
 
 import (
 	"github.com/0xPolygonHermez/zkevm-node/state"
+	"github.com/0xPolygonHermez/zkevm-node/state/datastream"
 )
 
 func (f *finalizer) DSSendL2Block(batchNumber uint64, blockResponse *state.ProcessBlockResponse, l1InfoTreeIndex uint32) error {
@@ -12,12 +13,12 @@ func (f *finalizer) DSSendL2Block(batchNumber uint64, blockResponse *state.Proce
 		l2Block := state.DSL2Block{
 			BatchNumber:     batchNumber,
 			L2BlockNumber:   blockResponse.BlockNumber,
-			Timestamp:       int64(blockResponse.Timestamp),
+			Timestamp:       blockResponse.Timestamp,
 			L1InfoTreeIndex: l1InfoTreeIndex,
 			L1BlockHash:     blockResponse.BlockHashL1,
 			GlobalExitRoot:  blockResponse.GlobalExitRoot,
 			Coinbase:        f.sequencerAddress,
-			ForkID:          uint16(forkID),
+			ForkID:          forkID,
 			BlockHash:       blockResponse.BlockHash,
 			StateRoot:       blockResponse.BlockHash, //From etrog, the blockhash is the block root
 		}
@@ -55,8 +56,8 @@ func (f *finalizer) DSSendBatchBookmark(batchNumber uint64) {
 	// Check if stream server enabled
 	if f.streamServer != nil {
 		// Send batch bookmark to the streamer
-		f.dataToStream <- state.DSBookMark{
-			Type:  state.BookMarkTypeBatch,
+		f.dataToStream <- datastream.BookMark{
+			Type:  datastream.BookmarkType_BOOKMARK_TYPE_BATCH,
 			Value: batchNumber,
 		}
 	}

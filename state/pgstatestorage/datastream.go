@@ -78,7 +78,7 @@ func scanL2Block(row pgx.Row) (*state.DSL2Block, error) {
 	}
 	l2Block.GlobalExitRoot = common.HexToHash(gerStr)
 	l2Block.Coinbase = common.HexToAddress(coinbaseStr)
-	l2Block.Timestamp = timestamp.Unix()
+	l2Block.Timestamp = uint64(timestamp.Unix())
 	l2Block.BlockHash = common.HexToHash(blockHashStr)
 	l2Block.StateRoot = common.HexToHash(stateRootStr)
 

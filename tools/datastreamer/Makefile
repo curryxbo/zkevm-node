@@ -39,10 +39,6 @@ decode-l2block-offline: ## Runs the offline tool to decode a given L2 block
 truncate: ## Runs the offline tool to truncate the stream file
 	go run main.go truncate -cfg config/tool.config.toml -entry $(arguments)
 
-# .PHONY: reprocess
-reprocess: ## Runs the tool to reprocess the information in the stream since a given l2 block
-	go run main.go reprocess -cfg config/tool.config.toml -genesis ../test/config/test.genesis.config.json -l2block $(arguments)
-
 ## Help display.
 ## Pulls comments from beside commands and prints a nicely formatted
 ## display with the commands and their usage information.
