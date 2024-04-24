@@ -707,7 +707,7 @@ func printEntry(entry datastreamer.FileEntry) {
 			os.Exit(1)
 		}
 		printColored(color.FgGreen, "Entry Type......: ")
-		printColored(color.FgHiYellow, "L2 Block Start\n")
+		printColored(color.FgHiYellow, "Batch\n")
 		printColored(color.FgGreen, "Entry Number....: ")
 		printColored(color.FgHiWhite, fmt.Sprintf("%d\n", entry.Number))
 		printColored(color.FgGreen, "Batch Number....: ")
