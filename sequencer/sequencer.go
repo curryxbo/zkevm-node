@@ -258,6 +258,8 @@ func (s *Sequencer) sendDataToStreamer(chainID uint64) {
 			case state.DSL2FullBlock:
 				l2Block := data
 
+				//TODO: remove this log
+				log.Infof("start atomic op for l2block %d", l2Block.L2BlockNumber)
 				err = s.streamServer.StartAtomicOp()
 				if err != nil {
 					log.Errorf("failed to start atomic op for l2block %d, error: %v ", l2Block.L2BlockNumber, err)
@@ -269,6 +271,8 @@ func (s *Sequencer) sendDataToStreamer(chainID uint64) {
 					Value: l2Block.L2BlockNumber,
 				}
 
+				//TODO: remove this log
+				log.Infof("add stream bookmark for l2block %d", l2Block.L2BlockNumber)
 				marshalledBookMark, err := proto.Marshal(bookMark)
 				if err != nil {
 					log.Errorf("failed to marshal bookmark for l2block %d, error: %v", l2Block.L2BlockNumber, err)
@@ -289,6 +293,8 @@ func (s *Sequencer) sendDataToStreamer(chainID uint64) {
 						Value: l2Block.L2BlockNumber - 1,
 					}
 
+					//TODO: remove this log
+					log.Infof("get previous l2block %d", l2Block.L2BlockNumber-1)
 					marshalledBookMark, err := proto.Marshal(bookMark)
 					if err != nil {
 						log.Errorf("failed to marshal bookmark for l2block %d, error: %v", l2Block.L2BlockNumber, err)
@@ -327,12 +333,16 @@ func (s *Sequencer) sendDataToStreamer(chainID uint64) {
 					continue
 				}
 
+				//TODO: remove this log
+				log.Infof("add l2blockStart stream entry for l2block %d", l2Block.L2BlockNumber)
 				_, err = s.streamServer.AddStreamEntry(datastreamer.EntryType(datastream.BookmarkType_BOOKMARK_TYPE_L2_BLOCK), marshalledL2Block)
 				if err != nil {
 					log.Errorf("failed to add stream entry for l2block %d, error: %v", l2Block.L2BlockNumber, err)
 					continue
 				}
 
+				//TODO: remove this log
+				log.Infof("adding l2tx stream entries for l2block %d", l2Block.L2BlockNumber)
 				for _, l2Transaction := range l2Block.Txs {
 					streamL2Transaction := &datastream.Transaction{
 						L2BlockNumber:               l2Transaction.L2BlockNumber,
@@ -355,11 +365,33 @@ func (s *Sequencer) sendDataToStreamer(chainID uint64) {
 					}
 				}
 
+				// TODO: CHANGE THIS FOR BATCH
+				/*
+					blockEnd := state.DSL2BlockEnd{
+						L2BlockNumber: l2Block.L2BlockNumber,
+						BlockHash:     l2Block.BlockHash,
+						StateRoot:     l2Block.StateRoot,
+					}
+
+					//TODO: remove this log
+					log.Infof("add l2blockEnd stream entry for l2block %d", l2Block.L2BlockNumber)
+					_, err = s.streamServer.AddStreamEntry(state.EntryTypeL2BlockEnd, blockEnd.Encode())
+					if err != nil {
+						log.Errorf("failed to add stream entry for l2block %d, error: %v", l2Block.L2BlockNumber, err)
+						continue
+					}
+				*/
+
+				//TODO: remove this log
+				log.Infof("commit atomic op for l2block %d", l2Block.L2BlockNumber)
 				err = s.streamServer.CommitAtomicOp()
 				if err != nil {
 					log.Errorf("failed to commit atomic op for l2block %d, error: %v ", l2Block.L2BlockNumber, err)
 					continue
 				}
+
+				//TODO: remove this log
+				log.Infof("l2block %d sent to datastream", l2Block.L2BlockNumber)
 
 			// Stream a bookmark
 			case datastream.BookMark:
