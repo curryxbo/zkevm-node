@@ -279,25 +279,6 @@ func GenerateDataStreamerFile(ctx context.Context, streamServer *datastreamer.St
 			return err
 		}
 
-		batch := &datastream.Batch{
-			Number:        genesisL2Block.BatchNumber,
-			LocalExitRoot: common.Hash{}.Bytes(),
-			StateRoot:     genesisL2Block.StateRoot.Bytes(),
-			Coinbase:      genesisL2Block.Coinbase.Bytes(),
-			ForkId:        genesisL2Block.ForkID,
-			ChainId:       chainID,
-		}
-
-		marshalledBatch, err := proto.Marshal(batch)
-		if err != nil {
-			return err
-		}
-
-		_, err = streamServer.AddStreamEntry(datastreamer.EntryType(datastream.EntryType_ENTRY_TYPE_BATCH), marshalledBatch)
-		if err != nil {
-			return err
-		}
-
 		bookMark = &datastream.BookMark{
 			Type:  datastream.BookmarkType_BOOKMARK_TYPE_L2_BLOCK,
 			Value: genesisL2Block.L2BlockNumber,
@@ -321,6 +302,7 @@ func GenerateDataStreamerFile(ctx context.Context, streamServer *datastreamer.St
 			Hash:            genesisL2Block.BlockHash.Bytes(),
 			StateRoot:       genesisL2Block.StateRoot.Bytes(),
 			GlobalExitRoot:  genesisL2Block.GlobalExitRoot.Bytes(),
+			Coinbase:        genesisL2Block.Coinbase.Bytes(),
 		}
 
 		log.Infof("Genesis block: %+v", genesisBlock)
@@ -331,6 +313,24 @@ func GenerateDataStreamerFile(ctx context.Context, streamServer *datastreamer.St
 		}
 
 		_, err = streamServer.AddStreamEntry(datastreamer.EntryType(datastream.EntryType_ENTRY_TYPE_L2_BLOCK), marshalledGenesisBlock)
+		if err != nil {
+			return err
+		}
+
+		genesisBatch := &datastream.Batch{
+			Number:        genesisL2Block.BatchNumber,
+			LocalExitRoot: common.Hash{}.Bytes(),
+			StateRoot:     genesisL2Block.StateRoot.Bytes(),
+			ForkId:        genesisL2Block.ForkID,
+			ChainId:       chainID,
+		}
+
+		marshalledGenesisBatch, err := proto.Marshal(genesisBatch)
+		if err != nil {
+			return err
+		}
+
+		_, err = streamServer.AddStreamEntry(datastreamer.EntryType(datastream.EntryType_ENTRY_TYPE_BATCH), marshalledGenesisBatch)
 		if err != nil {
 			return err
 		}
@@ -349,6 +349,16 @@ func GenerateDataStreamerFile(ctx context.Context, streamServer *datastreamer.St
 		log.Infof("Latest entry: %+v", latestEntry)
 
 		switch latestEntry.Type {
+		case datastreamer.EntryType(datastream.EntryType_ENTRY_TYPE_BATCH):
+			log.Info("Latest entry type is Batch")
+
+			batch := &datastream.Batch{}
+			if err := proto.Unmarshal(latestEntry.Data, batch); err != nil {
+				return err
+			}
+
+			currentBatchNumber = batch.Number
+			currentBatchNumber++
 		case datastreamer.EntryType(datastream.EntryType_ENTRY_TYPE_UPDATE_GER):
 			log.Info("Latest entry type is UpdateGER")
 
@@ -360,7 +370,7 @@ func GenerateDataStreamerFile(ctx context.Context, streamServer *datastreamer.St
 			currentBatchNumber = updateGer.BatchNumber
 			currentBatchNumber++
 		case datastreamer.EntryType(datastream.EntryType_ENTRY_TYPE_L2_BLOCK):
-			log.Info("Latest entry type is L2BlockEnd")
+			log.Info("Latest entry type is L2Block")
 
 			l2Block := &datastream.L2Block{}
 
@@ -565,6 +575,7 @@ func GenerateDataStreamerFile(ctx context.Context, streamServer *datastreamer.St
 						Hash:            l2Block.BlockHash.Bytes(),
 						StateRoot:       l2Block.StateRoot.Bytes(),
 						GlobalExitRoot:  l2Block.GlobalExitRoot.Bytes(),
+						Coinbase:        l2Block.Coinbase.Bytes(),
 					}
 
 					if l2Block.ForkID >= FORKID_ETROG {
@@ -627,7 +638,7 @@ func GenerateDataStreamerFile(ctx context.Context, streamServer *datastreamer.St
 						transaction := &datastream.Transaction{
 							L2BlockNumber:               tx.L2BlockNumber,
 							IsValid:                     tx.IsValid != 0,
-							Data:                        tx.Encoded,
+							Encoded:                     tx.Encoded,
 							EffectiveGasPricePercentage: uint32(tx.EffectiveGasPricePercentage),
 							ImStateRoot:                 tx.StateRoot.Bytes(),
 						}

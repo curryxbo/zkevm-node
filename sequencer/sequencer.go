@@ -347,7 +347,7 @@ func (s *Sequencer) sendDataToStreamer(chainID uint64) {
 					streamL2Transaction := &datastream.Transaction{
 						L2BlockNumber:               l2Transaction.L2BlockNumber,
 						IsValid:                     l2Transaction.IsValid != 0,
-						Data:                        l2Transaction.Encoded,
+						Encoded:                     l2Transaction.Encoded,
 						EffectiveGasPricePercentage: uint32(l2Transaction.EffectiveGasPricePercentage),
 						ImStateRoot:                 l2Transaction.ImStateRoot.Bytes(),
 					}

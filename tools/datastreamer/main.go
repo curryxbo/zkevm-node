@@ -699,6 +699,8 @@ func printEntry(entry datastreamer.FileEntry) {
 		printColored(color.FgHiWhite, fmt.Sprintf("%s\n", common.BytesToHash(l2Block.StateRoot)))
 		printColored(color.FgGreen, "Global Exit Root: ")
 		printColored(color.FgHiWhite, fmt.Sprintf("%s\n", common.BytesToHash(l2Block.GlobalExitRoot)))
+		printColored(color.FgGreen, "Coinbase........: ")
+		printColored(color.FgHiWhite, fmt.Sprintf("%s\n", common.BytesToAddress(l2Block.Coinbase)))
 	case datastreamer.EntryType(datastream.EntryType_ENTRY_TYPE_BATCH):
 		batch := &datastream.Batch{}
 		err := proto.Unmarshal(entry.Data, batch)
@@ -714,8 +716,6 @@ func printEntry(entry datastreamer.FileEntry) {
 		printColored(color.FgHiWhite, fmt.Sprintf("%d\n", batch.Number))
 		printColored(color.FgGreen, "Local Exit Root.: ")
 		printColored(color.FgHiWhite, fmt.Sprintf("%s\n", "0x"+common.Bytes2Hex(batch.LocalExitRoot)))
-		printColored(color.FgGreen, "Coinbase........: ")
-		printColored(color.FgHiWhite, fmt.Sprintf("%s\n", common.BytesToAddress(batch.Coinbase)))
 		printColored(color.FgGreen, "Fork ID.........: ")
 		printColored(color.FgHiWhite, fmt.Sprintf("%d\n", batch.ForkId))
 		printColored(color.FgGreen, "Chain ID........: ")
@@ -737,13 +737,13 @@ func printEntry(entry datastreamer.FileEntry) {
 		printColored(color.FgGreen, "Is Valid........: ")
 		printColored(color.FgHiWhite, fmt.Sprintf("%t\n", dsTx.IsValid))
 		printColored(color.FgGreen, "Data............: ")
-		printColored(color.FgHiWhite, fmt.Sprintf("%s\n", "0x"+common.Bytes2Hex(dsTx.Data)))
+		printColored(color.FgHiWhite, fmt.Sprintf("%s\n", "0x"+common.Bytes2Hex(dsTx.Encoded)))
 		printColored(color.FgGreen, "Effec. Gas Price: ")
 		printColored(color.FgHiWhite, fmt.Sprintf("%d\n", dsTx.EffectiveGasPricePercentage))
 		printColored(color.FgGreen, "IM State Root...: ")
 		printColored(color.FgHiWhite, fmt.Sprint(common.Bytes2Hex(dsTx.ImStateRoot)+"\n"))
 
-		tx, err := state.DecodeTx(common.Bytes2Hex(dsTx.Data))
+		tx, err := state.DecodeTx(common.Bytes2Hex(dsTx.Encoded))
 		if err != nil {
 			log.Error(err)
 			os.Exit(1)
