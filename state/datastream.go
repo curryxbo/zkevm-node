@@ -29,7 +29,7 @@ const (
 type DSBatch struct {
 	Batch
 	ForkID         uint64
-	EtrogTimestamp time.Time
+	EtrogTimestamp *time.Time
 }
 
 // DSFullBatch represents a data stream batch ant its L2 blocks
@@ -584,7 +584,7 @@ func GenerateDataStreamFile(ctx context.Context, streamServer *datastreamer.Stre
 						streamL2Block.Hash = l2Block.StateRoot.Bytes()
 					}
 
-					if l2Block.ForkID == FORKID_ETROG {
+					if l2Block.ForkID == FORKID_ETROG && batch.EtrogTimestamp != nil {
 						streamL2Block.MinTimestamp = uint64(batch.EtrogTimestamp.Unix())
 					}
 
