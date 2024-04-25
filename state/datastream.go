@@ -657,6 +657,25 @@ func GenerateDataStreamerFile(ctx context.Context, streamServer *datastreamer.St
 					currentGER = l2Block.GlobalExitRoot
 				}
 			}
+
+			batch := &datastream.Batch{
+				Number:        batch.BatchNumber,
+				LocalExitRoot: batch.LocalExitRoot.Bytes(),
+				StateRoot:     batch.StateRoot.Bytes(),
+				ForkId:        batch.ForkID,
+				ChainId:       chainID,
+			}
+
+			marshalledBatch, err := proto.Marshal(batch)
+			if err != nil {
+				return err
+			}
+
+			_, err = streamServer.AddStreamEntry(datastreamer.EntryType(datastream.EntryType_ENTRY_TYPE_BATCH), marshalledBatch)
+			if err != nil {
+				return err
+			}
+
 			// Commit at the end of each batch group
 			err = streamServer.CommitAtomicOp()
 			if err != nil {

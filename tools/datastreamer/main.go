@@ -382,17 +382,16 @@ func decodeL2Block(cliCtx *cli.Context) error {
 		log.Error(err)
 		os.Exit(1)
 	}
-	printEntry(secondEntry)
 
 	i := uint64(2) //nolint:gomnd
 	for secondEntry.Type == datastreamer.EntryType(datastream.EntryType_ENTRY_TYPE_TRANSACTION) {
+		printEntry(secondEntry)
 		entry, err := client.ExecCommandGetEntry(firstEntry.Number + i)
 		if err != nil {
 			log.Error(err)
 			os.Exit(1)
 		}
 		secondEntry = entry
-		printEntry(secondEntry)
 		i++
 	}
 
