@@ -243,8 +243,8 @@ type DSState interface {
 	GetL1InfoRootLeafByIndex(ctx context.Context, l1InfoTreeIndex uint32, dbTx pgx.Tx) (L1InfoTreeExitRootStorageEntry, error)
 }
 
-// GenerateDataStreamerFile generates or resumes a data stream file
-func GenerateDataStreamerFile(ctx context.Context, streamServer *datastreamer.StreamServer, stateDB DSState, readWIPBatch bool, imStateRoots *map[uint64][]byte, chainID uint64, upgradeEtrogBatchNumber uint64) error {
+// GenerateDataStreamFile generates or resumes a data stream file
+func GenerateDataStreamFile(ctx context.Context, streamServer *datastreamer.StreamServer, stateDB DSState, readWIPBatch bool, imStateRoots *map[uint64][]byte, chainID uint64, upgradeEtrogBatchNumber uint64) error {
 	header := streamServer.GetHeader()
 
 	var currentBatchNumber uint64 = 0
@@ -297,7 +297,7 @@ func GenerateDataStreamerFile(ctx context.Context, streamServer *datastreamer.St
 		genesisBlock := &datastream.L2Block{
 			Number:          genesisL2Block.L2BlockNumber,
 			DeltaTimestamp:  0,
-			MinTimestamp:    genesisL2Block.Timestamp,
+			MinTimestamp:    0,
 			L1InfotreeIndex: 0,
 			Hash:            genesisL2Block.BlockHash.Bytes(),
 			StateRoot:       genesisL2Block.StateRoot.Bytes(),
