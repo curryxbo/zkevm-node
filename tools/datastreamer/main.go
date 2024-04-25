@@ -713,6 +713,8 @@ func printEntry(entry datastreamer.FileEntry) {
 		printColored(color.FgHiWhite, fmt.Sprintf("%d\n", entry.Number))
 		printColored(color.FgGreen, "Batch Number....: ")
 		printColored(color.FgHiWhite, fmt.Sprintf("%d\n", batch.Number))
+		printColored(color.FgGreen, "State Root......: ")
+		printColored(color.FgHiWhite, fmt.Sprintf("%s\n", "0x"+common.Bytes2Hex(batch.StateRoot)))
 		printColored(color.FgGreen, "Local Exit Root.: ")
 		printColored(color.FgHiWhite, fmt.Sprintf("%s\n", "0x"+common.Bytes2Hex(batch.LocalExitRoot)))
 		printColored(color.FgGreen, "Fork ID.........: ")
