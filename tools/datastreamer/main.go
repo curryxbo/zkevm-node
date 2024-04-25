@@ -538,14 +538,14 @@ func decodeL2BlockOffline(cliCtx *cli.Context) error {
 	}
 
 	i := uint64(2) //nolint:gomnd
-	printEntry(secondEntry)
+
 	for secondEntry.Type == datastreamer.EntryType(datastream.EntryType_ENTRY_TYPE_TRANSACTION) {
+		printEntry(secondEntry)
 		secondEntry, err = streamServer.GetEntry(firstEntry.Number + i)
 		if err != nil {
 			log.Error(err)
 			os.Exit(1)
 		}
-		printEntry(secondEntry)
 		i++
 	}
 

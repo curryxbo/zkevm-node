@@ -305,7 +305,7 @@ func GenerateDataStreamerFile(ctx context.Context, streamServer *datastreamer.St
 			Coinbase:        genesisL2Block.Coinbase.Bytes(),
 		}
 
-		log.Infof("Genesis block: %+v", genesisBlock)
+		log.Debugf("Genesis block: %+v", genesisBlock)
 
 		marshalledGenesisBlock, err := proto.Marshal(genesisBlock)
 		if err != nil {
