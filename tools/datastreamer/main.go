@@ -742,7 +742,7 @@ func printEntry(entry datastreamer.FileEntry) {
 		printColored(color.FgGreen, "Effec. Gas Price: ")
 		printColored(color.FgHiWhite, fmt.Sprintf("%d\n", dsTx.EffectiveGasPricePercentage))
 		printColored(color.FgGreen, "IM State Root...: ")
-		printColored(color.FgHiWhite, fmt.Sprint(common.Bytes2Hex(dsTx.ImStateRoot)+"\n"))
+		printColored(color.FgHiWhite, fmt.Sprint("0x"+common.Bytes2Hex(dsTx.ImStateRoot)+"\n"))
 
 		tx, err := state.DecodeTx(common.Bytes2Hex(dsTx.Encoded))
 		if err != nil {

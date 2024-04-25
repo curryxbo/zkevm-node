@@ -3,6 +3,7 @@ package state
 import (
 	"context"
 	"math/big"
+	"time"
 
 	"github.com/0xPolygonHermez/zkevm-data-streamer/datastreamer"
 	"github.com/0xPolygonHermez/zkevm-node/log"
@@ -27,7 +28,8 @@ const (
 // DSBatch represents a data stream batch
 type DSBatch struct {
 	Batch
-	ForkID uint64
+	ForkID         uint64
+	EtrogTimestamp time.Time
 }
 
 // DSFullBatch represents a data stream batch ant its L2 blocks
@@ -569,7 +571,7 @@ func GenerateDataStreamFile(ctx context.Context, streamServer *datastreamer.Stre
 						BatchNumber:     l2Block.BatchNumber,
 						Timestamp:       l2Block.Timestamp,
 						DeltaTimestamp:  uint32(l2Block.Timestamp - previousTimestamp),
-						MinTimestamp:    l2Block.Min_timestamp,
+						MinTimestamp:    uint64(batch.Timestamp.Unix()),
 						L1Blockhash:     l1BlockHash.Bytes(),
 						L1InfotreeIndex: l1InfoTreeIndex,
 						Hash:            l2Block.BlockHash.Bytes(),
@@ -580,6 +582,10 @@ func GenerateDataStreamFile(ctx context.Context, streamServer *datastreamer.Stre
 
 					if l2Block.ForkID >= FORKID_ETROG {
 						streamL2Block.Hash = l2Block.StateRoot.Bytes()
+					}
+
+					if l2Block.ForkID == FORKID_ETROG {
+						streamL2Block.MinTimestamp = uint64(batch.EtrogTimestamp.Unix())
 					}
 
 					previousTimestamp = l2Block.Timestamp
