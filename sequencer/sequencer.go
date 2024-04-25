@@ -365,23 +365,6 @@ func (s *Sequencer) sendDataToStreamer(chainID uint64) {
 					}
 				}
 
-				// TODO: CHANGE THIS FOR BATCH
-				/*
-					blockEnd := state.DSL2BlockEnd{
-						L2BlockNumber: l2Block.L2BlockNumber,
-						BlockHash:     l2Block.BlockHash,
-						StateRoot:     l2Block.StateRoot,
-					}
-
-					//TODO: remove this log
-					log.Infof("add l2blockEnd stream entry for l2block %d", l2Block.L2BlockNumber)
-					_, err = s.streamServer.AddStreamEntry(state.EntryTypeL2BlockEnd, blockEnd.Encode())
-					if err != nil {
-						log.Errorf("failed to add stream entry for l2block %d, error: %v", l2Block.L2BlockNumber, err)
-						continue
-					}
-				*/
-
 				//TODO: remove this log
 				log.Infof("commit atomic op for l2block %d", l2Block.L2BlockNumber)
 				err = s.streamServer.CommitAtomicOp()
@@ -416,6 +399,32 @@ func (s *Sequencer) sendDataToStreamer(chainID uint64) {
 				err = s.streamServer.CommitAtomicOp()
 				if err != nil {
 					log.Errorf("failed to commit atomic op for bookmark type %d, value %d, error: %v", data.Type, data.Value, err)
+					continue
+				}
+			case datastream.Batch:
+				err = s.streamServer.StartAtomicOp()
+				if err != nil {
+					log.Errorf("failed to start atomic op for batch, error: %v", err)
+					continue
+				}
+
+				data.ChainId = chainID
+
+				marshalledBatch, err := proto.Marshal(&data)
+				if err != nil {
+					log.Errorf("failed to marshal batch, error: %v", err)
+					continue
+				}
+
+				_, err = s.streamServer.AddStreamEntry(datastreamer.EntryType(datastream.EntryType_ENTRY_TYPE_BATCH), marshalledBatch)
+				if err != nil {
+					log.Errorf("failed to add stream entry for batch, error: %v", err)
+					continue
+				}
+
+				err = s.streamServer.CommitAtomicOp()
+				if err != nil {
+					log.Errorf("failed to commit atomic op for batch, error: %v", err)
 					continue
 				}
 
