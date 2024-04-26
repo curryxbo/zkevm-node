@@ -575,7 +575,7 @@ func decodeBatch(cliCtx *cli.Context) error {
 	}
 	printEntry(firstEntry)
 
-	batchData = append(batchData, firstEntry.Data...)
+	batchData = append(batchData, firstEntry.Encode()...)
 
 	secondEntry, err := client.ExecCommandGetEntry(firstEntry.Number + 1)
 	if err != nil {
@@ -584,7 +584,7 @@ func decodeBatch(cliCtx *cli.Context) error {
 	}
 	printEntry(secondEntry)
 
-	batchData = append(batchData, secondEntry.Data...)
+	batchData = append(batchData, secondEntry.Encode()...)
 
 	i := uint64(2) //nolint:gomnd
 	for {
@@ -605,7 +605,7 @@ func decodeBatch(cliCtx *cli.Context) error {
 
 		secondEntry = entry
 		printEntry(secondEntry)
-		batchData = append(batchData, secondEntry.Data...)
+		batchData = append(batchData, secondEntry.Encode()...)
 		i++
 	}
 
@@ -655,7 +655,7 @@ func decodeBatchOffline(cliCtx *cli.Context) error {
 		os.Exit(1)
 	}
 	printEntry(firstEntry)
-	batchData = append(batchData, firstEntry.Data...)
+	batchData = append(batchData, firstEntry.Encode()...)
 
 	secondEntry, err := streamServer.GetEntry(firstEntry.Number + 1)
 	if err != nil {
@@ -665,7 +665,7 @@ func decodeBatchOffline(cliCtx *cli.Context) error {
 
 	i := uint64(2) //nolint:gomnd
 	printEntry(secondEntry)
-	batchData = append(batchData, secondEntry.Data...)
+	batchData = append(batchData, secondEntry.Encode()...)
 	for {
 		secondEntry, err = streamServer.GetEntry(firstEntry.Number + i)
 		if err != nil {
@@ -683,7 +683,7 @@ func decodeBatchOffline(cliCtx *cli.Context) error {
 		}
 
 		printEntry(secondEntry)
-		batchData = append(batchData, secondEntry.Data...)
+		batchData = append(batchData, secondEntry.Encode()...)
 		i++
 	}
 
