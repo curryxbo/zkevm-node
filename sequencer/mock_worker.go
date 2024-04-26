@@ -70,9 +70,9 @@ func (_m *WorkerMock) DeleteTxPendingToStore(txHash common.Hash, addr common.Add
 	_m.Called(txHash, addr)
 }
 
-// GetBestFittingTx provides a mock function with given fields: resources
-func (_m *WorkerMock) GetBestFittingTx(resources state.BatchResources) (*TxTracker, error) {
-	ret := _m.Called(resources)
+// GetBestFittingTx provides a mock function with given fields: remainingResources, highReservedCounters
+func (_m *WorkerMock) GetBestFittingTx(remainingResources state.BatchResources, highReservedCounters state.ZKCounters) (*TxTracker, error) {
+	ret := _m.Called(remainingResources, highReservedCounters)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetBestFittingTx")
@@ -80,19 +80,19 @@ func (_m *WorkerMock) GetBestFittingTx(resources state.BatchResources) (*TxTrack
 
 	var r0 *TxTracker
 	var r1 error
-	if rf, ok := ret.Get(0).(func(state.BatchResources) (*TxTracker, error)); ok {
-		return rf(resources)
+	if rf, ok := ret.Get(0).(func(state.BatchResources, state.ZKCounters) (*TxTracker, error)); ok {
+		return rf(remainingResources, highReservedCounters)
 	}
-	if rf, ok := ret.Get(0).(func(state.BatchResources) *TxTracker); ok {
-		r0 = rf(resources)
+	if rf, ok := ret.Get(0).(func(state.BatchResources, state.ZKCounters) *TxTracker); ok {
+		r0 = rf(remainingResources, highReservedCounters)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).(*TxTracker)
 		}
 	}
 
-	if rf, ok := ret.Get(1).(func(state.BatchResources) error); ok {
-		r1 = rf(resources)
+	if rf, ok := ret.Get(1).(func(state.BatchResources, state.ZKCounters) error); ok {
+		r1 = rf(remainingResources, highReservedCounters)
 	} else {
 		r1 = ret.Error(1)
 	}

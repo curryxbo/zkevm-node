@@ -16,17 +16,19 @@ import (
 
 // Batch represents a wip or processed batch.
 type Batch struct {
-	batchNumber             uint64
-	coinbase                common.Address
-	timestamp               time.Time
-	initialStateRoot        common.Hash // initial stateRoot of the batch
-	imStateRoot             common.Hash // intermediate stateRoot when processing tx-by-tx
-	finalStateRoot          common.Hash // final stateroot of the batch when a L2 block is processed
-	countOfTxs              int
-	countOfL2Blocks         int
-	imRemainingResources    state.BatchResources // remaining batch resources when processing tx-by-tx
-	finalRemainingResources state.BatchResources // remaining batch resources when a L2 block is processed
-	closingReason           state.ClosingReason
+	batchNumber                 uint64
+	coinbase                    common.Address
+	timestamp                   time.Time
+	initialStateRoot            common.Hash // initial stateRoot of the batch
+	imStateRoot                 common.Hash // intermediate stateRoot when processing tx-by-tx
+	finalStateRoot              common.Hash // final stateroot of the batch when a L2 block is processed
+	countOfTxs                  int
+	countOfL2Blocks             int
+	imRemainingResources        state.BatchResources // remaining batch resources when processing tx-by-tx
+	imHighReservedZKCounters    state.ZKCounters
+	finalRemainingResources     state.BatchResources // remaining batch resources when a L2 block is processed
+	finalHighReservedZKCounters state.ZKCounters
+	closingReason               state.ClosingReason
 }
 
 func (w *Batch) isEmpty() bool {
@@ -81,7 +83,7 @@ func (f *finalizer) setWIPBatch(ctx context.Context, wipStateBatch *state.Batch)
 	remainingResources := getMaxBatchResources(f.batchConstraints)
 	overflow, overflowResource := remainingResources.Sub(wipStateBatch.Resources)
 	if overflow {
-		return nil, fmt.Errorf("failed to subtract used resources when setting the WIP batch to the state batch %d, overflow resource: %s", wipStateBatch.BatchNumber, overflowResource)
+		return nil, fmt.Errorf("failed to subtract used resources when setting the wip batch to the state batch %d, overflow resource: %s", wipStateBatch.BatchNumber, overflowResource)
 	}
 
 	wipBatch := &Batch{
@@ -126,7 +128,7 @@ func (f *finalizer) initWIPBatch(ctx context.Context) {
 		if lastStateBatch.BatchNumber+1 == f.cfg.HaltOnBatchNumber {
 			f.Halt(ctx, fmt.Errorf("finalizer reached stop sequencer on batch number: %d", f.cfg.HaltOnBatchNumber), false)
 		}
-		f.wipBatch = f.openNewWIPBatch(ctx, lastStateBatch.BatchNumber+1, lastStateBatch.StateRoot)
+		f.wipBatch = f.openNewWIPBatch(lastStateBatch.BatchNumber+1, lastStateBatch.StateRoot)
 		f.pipBatch = nil
 		f.sipBatch = nil
 	} else { /// if it's not closed, it is the wip/pip/sip batch
@@ -143,7 +145,7 @@ func (f *finalizer) initWIPBatch(ctx context.Context) {
 }
 
 func (f *finalizer) processL2BlockReorg(ctx context.Context) error {
-	f.waitPendingL2Blocks(ctx)
+	f.waitPendingL2Blocks()
 
 	if f.sipBatch != nil && f.sipBatch.batchNumber != f.wipBatch.batchNumber {
 		// If the sip batch is the previous to the current wip batch and it's still open these means that the L2 block that caused
@@ -152,28 +154,9 @@ func (f *finalizer) processL2BlockReorg(ctx context.Context) error {
 		// the first tx reorged we can have a batch resource overflow (if we have closed the sip batch for this reason) and we will return
 		// the reorged tx to the worker (calling UpdateTxZKCounters) missing the order in which we need to reprocess the reorged txs
 
-		dbTx, err := f.stateIntf.BeginStateTransaction(ctx)
+		err := f.finalizeSIPBatch(ctx)
 		if err != nil {
-			return fmt.Errorf("error creating db transaction to close sip batch %d, error: %v", f.sipBatch.batchNumber, err)
-		}
-
-		// Close sip batch (close in statedb)
-		err = f.closeSIPBatch(ctx, dbTx)
-		if err != nil {
-			return fmt.Errorf("failed to close sip batch %d, error: %v", f.sipBatch.batchNumber, err)
-		}
-
-		if err != nil {
-			rollbackErr := dbTx.Rollback(ctx)
-			if rollbackErr != nil {
-				return fmt.Errorf("error when rollback db transaction to close sip batch %d, error: %v", f.sipBatch.batchNumber, rollbackErr)
-			}
-			return err
-		}
-
-		err = dbTx.Commit(ctx)
-		if err != nil {
-			return fmt.Errorf("error when commit db transaction to close sip batch %d, error: %v", f.sipBatch.batchNumber, err)
+			return fmt.Errorf("error finalizing sip batch, error: %v", err)
 		}
 	}
 
@@ -203,13 +186,42 @@ func (f *finalizer) finalizeWIPBatch(ctx context.Context, closeReason state.Clos
 
 	err := f.closeAndOpenNewWIPBatch(ctx, closeReason)
 	if err != nil {
-		f.Halt(ctx, fmt.Errorf("failed to create new WIP batch, error: %v", err), true)
+		f.Halt(ctx, fmt.Errorf("failed to create new wip batch, error: %v", err), true)
 	}
 
 	// If we have closed the wipL2Block then we open a new one
 	if f.wipL2Block == nil {
 		f.openNewWIPL2Block(ctx, prevTimestamp, &prevL1InfoTreeIndex)
 	}
+}
+
+// finalizeSIPBatch closes the current store-in-progress batch
+func (f *finalizer) finalizeSIPBatch(ctx context.Context) error {
+	dbTx, err := f.stateIntf.BeginStateTransaction(ctx)
+	if err != nil {
+		return fmt.Errorf("error creating db transaction to close sip batch %d, error: %v", f.sipBatch.batchNumber, err)
+	}
+
+	// Close sip batch (close in statedb)
+	err = f.closeSIPBatch(ctx, dbTx)
+	if err != nil {
+		return fmt.Errorf("failed to close sip batch %d, error: %v", f.sipBatch.batchNumber, err)
+	}
+
+	if err != nil {
+		rollbackErr := dbTx.Rollback(ctx)
+		if rollbackErr != nil {
+			return fmt.Errorf("error when rollback db transaction to close sip batch %d, error: %v", f.sipBatch.batchNumber, rollbackErr)
+		}
+		return err
+	}
+
+	err = dbTx.Commit(ctx)
+	if err != nil {
+		return fmt.Errorf("error when commit db transaction to close sip batch %d, error: %v", f.sipBatch.batchNumber, err)
+	}
+
+	return nil
 }
 
 // closeAndOpenNewWIPBatch closes the current batch and opens a new one, potentially processing forced batches between the batch is closed and the resulting new wip batch
@@ -222,37 +234,18 @@ func (f *finalizer) closeAndOpenNewWIPBatch(ctx context.Context, closeReason sta
 
 	var lastStateRoot common.Hash
 
-	//TODO: review forced batches implementations is not good "idea" to check for forced batches, maybe is better to do it on finalizeBatches loop
+	//TODO: review forced batches implementation since is not good "idea" to check here for forced batches, maybe is better to do it on finalizeBatches loop
 	if processForcedBatches {
 		// If we have reach the time to sync stateroot or we will process forced batches we must close the current wip L2 block and wip batch
 		f.closeWIPL2Block(ctx)
 		// We need to wait that all pending L2 blocks are processed and stored
-		f.waitPendingL2Blocks(ctx)
+		f.waitPendingL2Blocks()
 
 		lastStateRoot = f.sipBatch.finalStateRoot
 
-		dbTx, err := f.stateIntf.BeginStateTransaction(ctx)
+		err := f.finalizeSIPBatch(ctx)
 		if err != nil {
-			return fmt.Errorf("error creating db transaction to close sip batch %d, error: %v", f.sipBatch.batchNumber, err)
-		}
-
-		// Close sip batch (close in statedb)
-		err = f.closeSIPBatch(ctx, dbTx)
-		if err != nil {
-			return fmt.Errorf("failed to close sip batch %d, error: %v", f.sipBatch.batchNumber, err)
-		}
-
-		if err != nil {
-			rollbackErr := dbTx.Rollback(ctx)
-			if rollbackErr != nil {
-				return fmt.Errorf("error when rollback db transaction to close sip batch %d, error: %v", f.sipBatch.batchNumber, rollbackErr)
-			}
-			return err
-		}
-
-		err = dbTx.Commit(ctx)
-		if err != nil {
-			return fmt.Errorf("error when commit db transaction to close sip batch %d, error: %v", f.sipBatch.batchNumber, err)
+			return fmt.Errorf("error finalizing sip batch %d when processing forced batches, error: %v", f.sipBatch.batchNumber, err)
 		}
 	} else {
 		lastStateRoot = f.wipBatch.imStateRoot
@@ -264,7 +257,14 @@ func (f *finalizer) closeAndOpenNewWIPBatch(ctx context.Context, closeReason sta
 	f.closeWIPBatch(ctx)
 
 	if lastBatchNumber+1 == f.cfg.HaltOnBatchNumber {
-		f.waitPendingL2Blocks(ctx)
+		f.waitPendingL2Blocks()
+
+		// We finalize the current sip batch
+		err := f.finalizeSIPBatch(ctx)
+		if err != nil {
+			return fmt.Errorf("error finalizing sip batch %d when halting on batch %d", f.sipBatch.batchNumber, f.cfg.HaltOnBatchNumber)
+		}
+
 		f.Halt(ctx, fmt.Errorf("finalizer reached stop sequencer on batch number: %d", f.cfg.HaltOnBatchNumber), false)
 	}
 
@@ -273,7 +273,7 @@ func (f *finalizer) closeAndOpenNewWIPBatch(ctx context.Context, closeReason sta
 		lastBatchNumber, lastStateRoot = f.processForcedBatches(ctx, lastBatchNumber, lastStateRoot)
 	}
 
-	f.wipBatch = f.openNewWIPBatch(ctx, lastBatchNumber+1, lastStateRoot)
+	f.wipBatch = f.openNewWIPBatch(lastBatchNumber+1, lastStateRoot)
 
 	if processForcedBatches {
 		// We need to init/reset the wip L2 block in case we have processed forced batches
@@ -291,13 +291,13 @@ func (f *finalizer) closeAndOpenNewWIPBatch(ctx context.Context, closeReason sta
 		}
 	}
 
-	log.Infof("new WIP batch %d", f.wipBatch.batchNumber)
+	log.Infof("new wip batch %d", f.wipBatch.batchNumber)
 
 	return nil
 }
 
 // openNewWIPBatch opens a new batch in the state and returns it as WipBatch
-func (f *finalizer) openNewWIPBatch(ctx context.Context, batchNumber uint64, stateRoot common.Hash) *Batch {
+func (f *finalizer) openNewWIPBatch(batchNumber uint64, stateRoot common.Hash) *Batch {
 	maxRemainingResources := getMaxBatchResources(f.batchConstraints)
 
 	return &Batch{
@@ -349,7 +349,7 @@ func (f *finalizer) insertSIPBatch(ctx context.Context, batchNumber uint64, stat
 func (f *finalizer) closeWIPBatch(ctx context.Context) {
 	// Sanity check: batch must not be empty (should have L2 blocks)
 	if f.wipBatch.isEmpty() {
-		f.Halt(ctx, fmt.Errorf("closing WIP batch %d without L2 blocks and should have at least 1", f.wipBatch.batchNumber), false)
+		f.Halt(ctx, fmt.Errorf("closing wip batch %d without L2 blocks and should have at least 1", f.wipBatch.batchNumber), false)
 	}
 
 	log.Infof("wip batch %d closed, closing reason: %s", f.wipBatch.batchNumber, f.wipBatch.closingReason)
@@ -357,7 +357,7 @@ func (f *finalizer) closeWIPBatch(ctx context.Context) {
 	f.wipBatch = nil
 }
 
-// closeSIPBatch closes the current SIP batch in the state
+// closeSIPBatch closes the current sip batch in the state
 func (f *finalizer) closeSIPBatch(ctx context.Context, dbTx pgx.Tx) error {
 	// Sanity check: this can't happen
 	if f.sipBatch == nil {
@@ -597,6 +597,51 @@ func getMaxBatchResources(constraints state.BatchConstraintsCfg) state.BatchReso
 		},
 		Bytes: constraints.MaxBatchBytesSize,
 	}
+}
+
+// getNeededZKCounters returns the needed counters to fit a tx in the wip batch. The needed counters are the counters used by the tx plus the high reserved counters.
+// It will take into account the current high reserved counter got with previous txs but also checking reserved counters diff needed by this tx, since could be greater.
+func getNeededZKCounters(highReservedCounters state.ZKCounters, usedCounters state.ZKCounters, reservedCounters state.ZKCounters) (state.ZKCounters, state.ZKCounters) {
+	neededCounter := func(counterName string, highCounter uint32, usedCounter uint32, reservedCounter uint32) (uint32, uint32) {
+		if reservedCounter < usedCounter {
+			log.Warnf("%s reserved counter %d is less than used counter %d, this shouldn't be possible", counterName, reservedCounter, usedCounter)
+			return usedCounter + highCounter, highCounter
+		}
+		diffReserved := reservedCounter - usedCounter
+		if diffReserved > highCounter { // reserved counter for this tx (difference) is greater that the high reserved counter got in previous txs
+			return usedCounter + diffReserved, diffReserved
+		} else {
+			return usedCounter + highCounter, highCounter
+		}
+	}
+
+	needed := state.ZKCounters{}
+	newHigh := state.ZKCounters{}
+
+	needed.Arithmetics, newHigh.Arithmetics = neededCounter("Arithmetics", highReservedCounters.Arithmetics, usedCounters.Arithmetics, reservedCounters.Arithmetics)
+	needed.Binaries, newHigh.Binaries = neededCounter("Binaries", highReservedCounters.Binaries, usedCounters.Binaries, reservedCounters.Binaries)
+	needed.KeccakHashes, newHigh.KeccakHashes = neededCounter("KeccakHashes", highReservedCounters.KeccakHashes, usedCounters.KeccakHashes, reservedCounters.KeccakHashes)
+	needed.MemAligns, newHigh.MemAligns = neededCounter("MemAligns", highReservedCounters.MemAligns, usedCounters.MemAligns, reservedCounters.MemAligns)
+	needed.PoseidonHashes, newHigh.PoseidonHashes = neededCounter("PoseidonHashes", highReservedCounters.PoseidonHashes, usedCounters.PoseidonHashes, reservedCounters.PoseidonHashes)
+	needed.PoseidonPaddings, newHigh.PoseidonPaddings = neededCounter("PoseidonPaddings", highReservedCounters.PoseidonPaddings, usedCounters.PoseidonPaddings, reservedCounters.PoseidonPaddings)
+	needed.Sha256Hashes_V2, newHigh.Sha256Hashes_V2 = neededCounter("Sha256Hashes_V2", highReservedCounters.Sha256Hashes_V2, usedCounters.Sha256Hashes_V2, reservedCounters.Sha256Hashes_V2)
+	needed.Steps, newHigh.Steps = neededCounter("Steps", highReservedCounters.Steps, usedCounters.Steps, reservedCounters.Steps)
+
+	if reservedCounters.GasUsed < usedCounters.GasUsed {
+		log.Warnf("gasUsed reserved counter %d is less than used counter %d, this shouldn't be possible", reservedCounters.GasUsed, usedCounters.GasUsed)
+		needed.GasUsed = usedCounters.GasUsed + highReservedCounters.GasUsed
+	} else {
+		diffReserved := reservedCounters.GasUsed - usedCounters.GasUsed
+		if diffReserved > highReservedCounters.GasUsed {
+			needed.GasUsed = usedCounters.GasUsed + diffReserved
+			newHigh.GasUsed = diffReserved
+		} else {
+			needed.GasUsed = usedCounters.GasUsed + highReservedCounters.GasUsed
+			newHigh.GasUsed = highReservedCounters.GasUsed
+		}
+	}
+
+	return needed, newHigh
 }
 
 // checkIfFinalizeBatch returns true if the batch must be closed due to a closing reason, also it returns the description of the close reason

@@ -396,7 +396,7 @@ func (f *finalizer) finalizeBatches(ctx context.Context) {
 			f.finalizeWIPL2Block(ctx)
 		}
 
-		tx, err := f.workerIntf.GetBestFittingTx(f.wipBatch.imRemainingResources)
+		tx, err := f.workerIntf.GetBestFittingTx(f.wipBatch.imRemainingResources, f.wipBatch.imHighReservedZKCounters)
 
 		// If we have txs pending to process but none of them fits into the wip batch, we close the wip batch and open a new one
 		if err == ErrNoFittingTransaction {
@@ -584,24 +584,27 @@ func (f *finalizer) processTransaction(ctx context.Context, tx *TxTracker, first
 
 	oldStateRoot := f.wipBatch.imStateRoot
 	if len(batchResponse.BlockResponses) > 0 {
-		errWg, err = f.handleProcessTransactionResponse(ctx, tx, batchResponse, oldStateRoot)
+		var neededZKCounters state.ZKCounters
+		errWg, err, neededZKCounters = f.handleProcessTransactionResponse(ctx, tx, batchResponse, oldStateRoot)
 		if err != nil {
 			return errWg, err
 		}
+
+		// Update imStateRoot
+		f.wipBatch.imStateRoot = batchResponse.NewStateRoot
+
+		log.Infof("processed tx %s, batchNumber: %d, l2Block: [%d], newStateRoot: %s, oldStateRoot: %s, time: {process: %v, executor: %v}, counters: {used: %s, reserved: %s, needed: %s}",
+			tx.HashStr, batchRequest.BatchNumber, f.wipL2Block.trackingNum, batchResponse.NewStateRoot.String(), batchRequest.OldStateRoot.String(),
+			time.Since(start), executionTime, f.logZKCounters(batchResponse.UsedZkCounters), f.logZKCounters(batchResponse.ReservedZkCounters), f.logZKCounters(neededZKCounters))
+
+		return nil, nil
+	} else {
+		return nil, fmt.Errorf("error executirn batch %d, batchResponse has returned 0 blockResponses and should return 1", f.wipBatch.batchNumber)
 	}
-
-	// Update imStateRoot
-	f.wipBatch.imStateRoot = batchResponse.NewStateRoot
-
-	log.Infof("processed tx %s, batchNumber: %d, l2Block: [%d], newStateRoot: %s, oldStateRoot: %s, time: {process: %v, executor: %v}, used counters: %s, reserved counters: %s",
-		tx.HashStr, batchRequest.BatchNumber, f.wipL2Block.trackingNum, batchResponse.NewStateRoot.String(), batchRequest.OldStateRoot.String(),
-		time.Since(start), executionTime, f.logZKCounters(batchResponse.UsedZkCounters), f.logZKCounters(batchResponse.ReservedZkCounters))
-
-	return nil, nil
 }
 
 // handleProcessTransactionResponse handles the response of transaction processing.
-func (f *finalizer) handleProcessTransactionResponse(ctx context.Context, tx *TxTracker, result *state.ProcessBatchResponse, oldStateRoot common.Hash) (errWg *sync.WaitGroup, err error) {
+func (f *finalizer) handleProcessTransactionResponse(ctx context.Context, tx *TxTracker, result *state.ProcessBatchResponse, oldStateRoot common.Hash) (errWg *sync.WaitGroup, err error, neededZKCounters state.ZKCounters) {
 	txResponse := result.BlockResponses[0].TransactionResponses[0]
 
 	// Update metrics
@@ -612,7 +615,7 @@ func (f *finalizer) handleProcessTransactionResponse(ctx context.Context, tx *Tx
 	if !state.IsStateRootChanged(errorCode) {
 		// If intrinsic error or OOC error, we skip adding the transaction to the batch
 		errWg = f.handleProcessTransactionError(ctx, result, tx)
-		return errWg, txResponse.RomError
+		return errWg, txResponse.RomError, state.ZKCounters{}
 	}
 
 	egpEnabled := f.effectiveGasPrice.IsEnabled()
@@ -627,7 +630,7 @@ func (f *finalizer) handleProcessTransactionResponse(ctx context.Context, tx *Tx
 		if err != nil {
 			if egpEnabled {
 				log.Errorf("failed to calculate effective gas price with new gasUsed for tx %s, error: %v", tx.HashStr, err.Error())
-				return nil, err
+				return nil, err, state.ZKCounters{}
 			} else {
 				log.Warnf("effectiveGasPrice is disabled, but failed to calculate effective gas price with new gasUsed for tx %s, error: %v", tx.HashStr, err.Error())
 				tx.EGPLog.Error = fmt.Sprintf("%s; CalculateEffectiveGasPrice#2: %s", tx.EGPLog.Error, err)
@@ -652,28 +655,33 @@ func (f *finalizer) handleProcessTransactionResponse(ctx context.Context, tx *Tx
 			}
 
 			if errCompare != nil && egpEnabled {
-				return nil, errCompare
+				return nil, errCompare, state.ZKCounters{}
 			}
 		}
 	}
 
-	// Check if reserved resources of the tx fits in the remaining batch resources
+	// Check if needed resources of the tx fits in the remaining batch resources
+	// Needed resources are the used resources plus the max difference between used and reserved of all the txs (including this) in the batch
+	neededZKCounters, newHighZKCounters := getNeededZKCounters(f.wipBatch.imHighReservedZKCounters, result.UsedZkCounters, result.ReservedZkCounters)
 	subOverflow := false
-	fits, overflowResource := f.wipBatch.imRemainingResources.Fits(state.BatchResources{ZKCounters: result.ReservedZkCounters, Bytes: uint64(len(tx.RawTx))})
+	fits, overflowResource := f.wipBatch.imRemainingResources.Fits(state.BatchResources{ZKCounters: neededZKCounters, Bytes: uint64(len(tx.RawTx))})
 	if fits {
 		// Subtract the used resources from the batch
 		subOverflow, overflowResource = f.wipBatch.imRemainingResources.Sub(state.BatchResources{ZKCounters: result.UsedZkCounters, Bytes: uint64(len(tx.RawTx))})
-		if subOverflow { // Sanity check, this cannot happen as reservedZKCounters should be >= that usedZKCounters
-			sLog := fmt.Sprintf("tx %s used resources exceeds the remaining batch resources, overflow resource: %s, updating metadata for tx in worker and continuing. Batch counters: %s, tx used counters: %s",
-				tx.HashStr, overflowResource, f.logZKCounters(f.wipBatch.imRemainingResources.ZKCounters), f.logZKCounters(result.UsedZkCounters))
+		if subOverflow { // Sanity check, this cannot happen as neededZKCounters should be >= that usedZKCounters
+			sLog := fmt.Sprintf("tx %s used resources exceeds the remaining batch resources, overflow resource: %s, updating metadata for tx in worker and continuing. counters: {batch: %s, used: %s, reserved: %s, needed: %s, high: %s}",
+				tx.HashStr, overflowResource, f.logZKCounters(f.wipBatch.imRemainingResources.ZKCounters), f.logZKCounters(result.UsedZkCounters), f.logZKCounters(result.ReservedZkCounters), f.logZKCounters(neededZKCounters), f.logZKCounters(f.wipBatch.imHighReservedZKCounters))
 
 			log.Errorf(sLog)
 
 			f.LogEvent(ctx, event.Level_Error, event.EventID_UsedZKCountersOverflow, sLog, nil)
 		}
+
+		// Update highReservedZKCounters
+		f.wipBatch.imHighReservedZKCounters = newHighZKCounters
 	} else {
-		log.Infof("current tx %s reserved resources exceeds the remaining batch resources, overflow resource: %s, updating metadata for tx in worker and continuing. Batch counters: %s, tx reserved counters: %s",
-			tx.HashStr, overflowResource, f.logZKCounters(f.wipBatch.imRemainingResources.ZKCounters), f.logZKCounters(result.ReservedZkCounters))
+		log.Infof("current tx %s needed resources exceeds the remaining batch resources, overflow resource: %s, updating metadata for tx in worker and continuing. counters: {batch: %s, used: %s, reserved: %s, needed: %s, high: %s}",
+			tx.HashStr, overflowResource, f.logZKCounters(f.wipBatch.imRemainingResources.ZKCounters), f.logZKCounters(result.UsedZkCounters), f.logZKCounters(result.ReservedZkCounters), f.logZKCounters(neededZKCounters), f.logZKCounters(f.wipBatch.imHighReservedZKCounters))
 		if !f.batchConstraints.IsWithinConstraints(result.ReservedZkCounters) {
 			log.Infof("current tx %s reserved resources exceeds the max limit for batch resources (node OOC), setting tx as invalid in the pool", tx.HashStr)
 
@@ -689,15 +697,15 @@ func (f *finalizer) handleProcessTransactionResponse(ctx context.Context, tx *Tx
 				log.Errorf("failed to update status to invalid in the pool for tx %s, error: %v", tx.Hash.String(), err)
 			}
 
-			return nil, ErrBatchResourceOverFlow
+			return nil, ErrBatchResourceOverFlow, state.ZKCounters{}
 		}
 	}
 
-	// If reserved tx resources don't fit in the remaining batch resources (or we got an overflow when trying to subtract the used resources)
+	// If needed tx resources don't fit in the remaining batch resources (or we got an overflow when trying to subtract the used resources)
 	// we update the ZKCounters of the tx and returns ErrBatchResourceOverFlow error
 	if !fits || subOverflow {
 		f.workerIntf.UpdateTxZKCounters(txResponse.TxHash, tx.From, result.UsedZkCounters, result.ReservedZkCounters)
-		return nil, ErrBatchResourceOverFlow
+		return nil, ErrBatchResourceOverFlow, state.ZKCounters{}
 	}
 
 	// Save Enabled, GasPriceOC, BalanceOC and final effective gas price for later logging
@@ -720,7 +728,7 @@ func (f *finalizer) handleProcessTransactionResponse(ctx context.Context, tx *Tx
 	// Update metrics
 	f.wipL2Block.metrics.gas += txResponse.GasUsed
 
-	return nil, nil
+	return nil, nil, neededZKCounters
 }
 
 // compareTxEffectiveGasPrice compares newEffectiveGasPrice with tx.EffectiveGasPrice.

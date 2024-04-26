@@ -405,7 +405,7 @@ func (w *Worker) DeleteTxPendingToStore(txHash common.Hash, addr common.Address)
 }
 
 // GetBestFittingTx gets the most efficient tx that fits in the available batch resources
-func (w *Worker) GetBestFittingTx(resources state.BatchResources) (*TxTracker, error) {
+func (w *Worker) GetBestFittingTx(remainingResources state.BatchResources, highReservedCounters state.ZKCounters) (*TxTracker, error) {
 	w.workerMutex.Lock()
 	defer w.workerMutex.Unlock()
 
@@ -454,8 +454,9 @@ func (w *Worker) GetBestFittingTx(resources state.BatchResources) (*TxTracker, e
 				foundMutex.RUnlock()
 
 				txCandidate := w.txSortedList.getByIndex(i)
-				overflow, _ := bresources.Sub(state.BatchResources{ZKCounters: txCandidate.ReservedZKCounters, Bytes: txCandidate.Bytes})
-				if overflow {
+				needed, _ := getNeededZKCounters(highReservedCounters, txCandidate.UsedZKCounters, txCandidate.ReservedZKCounters)
+				fits, _ := bresources.Fits(state.BatchResources{ZKCounters: needed, Bytes: txCandidate.Bytes})
+				if !fits {
 					// We don't add this Tx
 					continue
 				}
@@ -469,7 +470,7 @@ func (w *Worker) GetBestFittingTx(resources state.BatchResources) (*TxTracker, e
 
 				return
 			}
-		}(i, resources)
+		}(i, remainingResources)
 	}
 	wg.Wait()
 

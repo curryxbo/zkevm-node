@@ -75,7 +75,7 @@ func (s *Sequencer) Start(ctx context.Context) {
 
 	err := s.pool.MarkWIPTxsAsPending(ctx)
 	if err != nil {
-		log.Fatalf("failed to mark WIP txs as pending, error: %v", err)
+		log.Fatalf("failed to mark wip txs as pending, error: %v", err)
 	}
 
 	// Start stream server if enabled
@@ -147,6 +147,11 @@ func (s *Sequencer) updateDataStreamerFile(ctx context.Context, chainID uint64) 
 func (s *Sequencer) deleteOldPoolTxs(ctx context.Context) {
 	for {
 		time.Sleep(s.cfg.DeletePoolTxsCheckInterval.Duration)
+
+		if s.finalizer.haltFinalizer.Load() {
+			return
+		}
+
 		log.Infof("trying to get txs to delete from the pool...")
 		earliestTxHash, err := s.pool.GetEarliestProcessedTx(ctx)
 		if err != nil {
@@ -181,6 +186,11 @@ func (s *Sequencer) deleteOldPoolTxs(ctx context.Context) {
 func (s *Sequencer) expireOldWorkerTxs(ctx context.Context) {
 	for {
 		time.Sleep(s.cfg.TxLifetimeCheckInterval.Duration)
+
+		if s.finalizer.haltFinalizer.Load() {
+			return
+		}
+
 		txTrackers := s.worker.ExpireTransactions(s.cfg.TxLifetimeMax.Duration)
 		failedReason := ErrExpiredTransaction.Error()
 		for _, txTracker := range txTrackers {
@@ -195,6 +205,10 @@ func (s *Sequencer) expireOldWorkerTxs(ctx context.Context) {
 // loadFromPool keeps loading transactions from the pool
 func (s *Sequencer) loadFromPool(ctx context.Context) {
 	for {
+		if s.finalizer.haltFinalizer.Load() {
+			return
+		}
+
 		poolTransactions, err := s.pool.GetNonWIPPendingTxs(ctx)
 		if err != nil && err != pool.ErrNotFound {
 			log.Errorf("error loading txs from pool, error: %v", err)

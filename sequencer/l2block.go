@@ -240,17 +240,25 @@ func (f *finalizer) processL2Block(ctx context.Context, l2Block *L2Block) error 
 
 	l2Block.batchResponse = batchResponse
 
+	// Check if needed resources of the L2 block fits in the remaining batch resources
+	// Needed resources are the used resources plus the max difference between used and reserved of all the L2 blocks (including this) in the batch
+	neededZKCounters, newHighZKCounters := getNeededZKCounters(l2Block.batch.finalHighReservedZKCounters, batchResponse.UsedZkCounters, batchResponse.ReservedZkCounters)
+
 	// Update finalRemainingResources of the batch
-	fits, overflowResource := l2Block.batch.finalRemainingResources.Fits(state.BatchResources{ZKCounters: batchResponse.ReservedZkCounters, Bytes: batchL2DataSize})
+	fits, overflowResource := l2Block.batch.finalRemainingResources.Fits(state.BatchResources{ZKCounters: neededZKCounters, Bytes: batchL2DataSize})
 	if fits {
 		subOverflow, overflowResource := l2Block.batch.finalRemainingResources.Sub(state.BatchResources{ZKCounters: batchResponse.UsedZkCounters, Bytes: batchL2DataSize})
 		if subOverflow { // Sanity check, this cannot happen as reservedZKCounters should be >= that usedZKCounters
-			return fmt.Errorf("error subtracting L2 block %d [%d] used resources from the batch %d, overflow resource: %s, batch counters: %s, L2 block used counters: %s, batch bytes: %d, L2 block bytes: %d",
-				blockResponse.BlockNumber, l2Block.trackingNum, l2Block.batch.batchNumber, overflowResource, f.logZKCounters(l2Block.batch.finalRemainingResources.ZKCounters), f.logZKCounters(batchResponse.UsedZkCounters), l2Block.batch.finalRemainingResources.Bytes, batchL2DataSize)
+			return fmt.Errorf("error subtracting L2 block %d [%d] needed resources from the batch %d, overflow resource: %s, batch bytes: %d, L2 block bytes: %d, counters: {batch: %s, used: %s, reserved: %s, needed: %s, high: %s}",
+				blockResponse.BlockNumber, l2Block.trackingNum, l2Block.batch.batchNumber, overflowResource, l2Block.batch.finalRemainingResources.Bytes, batchL2DataSize,
+				f.logZKCounters(l2Block.batch.finalRemainingResources.ZKCounters), f.logZKCounters(batchResponse.UsedZkCounters), f.logZKCounters(batchResponse.ReservedZkCounters), f.logZKCounters(neededZKCounters), f.logZKCounters(l2Block.batch.imHighReservedZKCounters))
 		}
+
+		l2Block.batch.finalHighReservedZKCounters = newHighZKCounters
 	} else {
-		overflowLog := fmt.Sprintf("L2 block %d [%d] reserved resources exceeds the remaining batch %d resources, overflow resource: %s, batch counters: %s, L2 block reserved counters: %s, batch bytes: %d, L2 block bytes: %d",
-			blockResponse.BlockNumber, l2Block.trackingNum, l2Block.batch.batchNumber, overflowResource, f.logZKCounters(l2Block.batch.finalRemainingResources.ZKCounters), f.logZKCounters(batchResponse.ReservedZkCounters), l2Block.batch.finalRemainingResources.Bytes, batchL2DataSize)
+		overflowLog := fmt.Sprintf("L2 block %d [%d] needed resources exceeds the remaining batch %d resources, overflow resource: %s, batch bytes: %d, L2 block bytes: %d, counters: {batch: %s, used: %s, reserved: %s, needed: %s, high: %s}",
+			blockResponse.BlockNumber, l2Block.trackingNum, l2Block.batch.batchNumber, overflowResource, l2Block.batch.finalRemainingResources.Bytes, batchL2DataSize,
+			f.logZKCounters(l2Block.batch.finalRemainingResources.ZKCounters), f.logZKCounters(batchResponse.UsedZkCounters), f.logZKCounters(batchResponse.ReservedZkCounters), f.logZKCounters(neededZKCounters), f.logZKCounters(l2Block.batch.imHighReservedZKCounters))
 
 		f.LogEvent(ctx, event.Level_Warning, event.EventID_ReservedZKCountersOverflow, overflowLog, nil)
 
@@ -276,10 +284,10 @@ func (f *finalizer) processL2Block(ctx context.Context, l2Block *L2Block) error 
 	}
 	f.metrics.addL2BlockMetrics(l2Block.metrics)
 
-	log.Infof("processed L2 block %d [%d], batch: %d, deltaTimestamp: %d, timestamp: %d, l1InfoTreeIndex: %d, l1InfoTreeIndexChanged: %v, initialStateRoot: %s, newStateRoot: %s, txs: %d/%d, blockHash: %s, infoRoot: %s, used counters: %s, reserved counters: %s",
+	log.Infof("processed L2 block %d [%d], batch: %d, deltaTimestamp: %d, timestamp: %d, l1InfoTreeIndex: %d, l1InfoTreeIndexChanged: %v, initialStateRoot: %s, newStateRoot: %s, txs: %d/%d, blockHash: %s, infoRoot: %s, counters: {used: %s, reserved: %s, needed: %s, high: %s}",
 		blockResponse.BlockNumber, l2Block.trackingNum, l2Block.batch.batchNumber, l2Block.deltaTimestamp, l2Block.timestamp, l2Block.l1InfoTreeExitRoot.L1InfoTreeIndex, l2Block.l1InfoTreeExitRootChanged, initialStateRoot, l2Block.batchResponse.NewStateRoot,
 		len(l2Block.transactions), len(blockResponse.TransactionResponses), blockResponse.BlockHash, blockResponse.BlockInfoRoot,
-		f.logZKCounters(batchResponse.UsedZkCounters), f.logZKCounters(batchResponse.ReservedZkCounters))
+		f.logZKCounters(batchResponse.UsedZkCounters), f.logZKCounters(batchResponse.ReservedZkCounters), f.logZKCounters(neededZKCounters), f.logZKCounters(l2Block.batch.finalHighReservedZKCounters))
 
 	if f.cfg.Metrics.EnableLog {
 		log.Infof("metrics-log: {l2block: {num: %d, trackingNum: %d, metrics: {%s}}, interval: {startAt: %d, metrics: {%s}}}",
@@ -517,7 +525,7 @@ func (f *finalizer) storeL2Block(ctx context.Context, l2Block *L2Block) error {
 
 // finalizeWIPL2Block closes the wip L2 block and opens a new one
 func (f *finalizer) finalizeWIPL2Block(ctx context.Context) {
-	log.Debugf("finalizing WIP L2 block [%d]", f.wipL2Block.trackingNum)
+	log.Debugf("finalizing wip L2 block [%d]", f.wipL2Block.trackingNum)
 
 	prevTimestamp := f.wipL2Block.timestamp
 	prevL1InfoTreeIndex := f.wipL2Block.l1InfoTreeExitRoot.L1InfoTreeIndex
@@ -529,7 +537,7 @@ func (f *finalizer) finalizeWIPL2Block(ctx context.Context) {
 
 // closeWIPL2Block closes the wip L2 block
 func (f *finalizer) closeWIPL2Block(ctx context.Context) {
-	log.Debugf("closing WIP L2 block [%d]", f.wipL2Block.trackingNum)
+	log.Debugf("closing wip L2 block [%d]", f.wipL2Block.trackingNum)
 
 	f.wipBatch.countOfL2Blocks++
 
@@ -565,13 +573,13 @@ func (f *finalizer) closeWIPL2Block(ctx context.Context) {
 		l2BlockResourcesUsed.ZKCounters.SumUp(f.wipL2Block.usedZKCounters)
 		l2BlockResourcesReserved.ZKCounters.SumUp(f.wipL2Block.reservedZKCounters)
 
-		log.Infof("closed WIP L2 block [%d], batch: %d, deltaTimestamp: %d, timestamp: %d, l1InfoTreeIndex: %d, l1InfoTreeIndexChanged: %v, txs: %d, used counters: %s, reserved counters: %s",
+		log.Infof("closed wip L2 block [%d], batch: %d, deltaTimestamp: %d, timestamp: %d, l1InfoTreeIndex: %d, l1InfoTreeIndexChanged: %v, txs: %d, used counters: %s, reserved counters: %s",
 			f.wipL2Block.trackingNum, f.wipL2Block.batch.batchNumber, f.wipL2Block.deltaTimestamp, f.wipL2Block.timestamp, f.wipL2Block.l1InfoTreeExitRoot.L1InfoTreeIndex,
 			f.wipL2Block.l1InfoTreeExitRootChanged, len(f.wipL2Block.transactions), f.logZKCounters(l2BlockResourcesUsed.ZKCounters), f.logZKCounters(l2BlockResourcesReserved.ZKCounters))
 
 		if f.nextStateRootSync.Before(time.Now()) {
 			log.Debug("sync stateroot time reached")
-			f.waitPendingL2Blocks(ctx)
+			f.waitPendingL2Blocks()
 
 			// Sanity-check: At this point f.sipBatch should be the same as the batch of the last L2 block processed
 			// (only if we haven't had a L2 block reorg just in the last block and it's the first one of the wipBatch)
@@ -625,13 +633,13 @@ func (f *finalizer) openNewWIPL2Block(ctx context.Context, prevTimestamp uint64,
 
 	f.wipL2Block = newL2Block
 
-	log.Debugf("creating new WIP L2 block [%d], batch: %d, deltaTimestamp: %d, timestamp: %d, l1InfoTreeIndex: %d, l1InfoTreeIndexChanged: %v",
+	log.Debugf("creating new wip L2 block [%d], batch: %d, deltaTimestamp: %d, timestamp: %d, l1InfoTreeIndex: %d, l1InfoTreeIndexChanged: %v",
 		f.wipL2Block.trackingNum, f.wipBatch.batchNumber, f.wipL2Block.deltaTimestamp, f.wipL2Block.timestamp, f.wipL2Block.l1InfoTreeExitRoot.L1InfoTreeIndex, f.wipL2Block.l1InfoTreeExitRootChanged)
 
 	// We process (execute) the new wip L2 block to update the imStateRoot and also get the counters used by the wip l2block
 	batchResponse, err := f.executeNewWIPL2Block(ctx)
 	if err != nil {
-		f.Halt(ctx, fmt.Errorf("failed to execute new WIP L2 block [%d], error: %v ", f.wipL2Block.trackingNum, err), false)
+		f.Halt(ctx, fmt.Errorf("failed to execute new wip L2 block [%d], error: %v ", f.wipL2Block.trackingNum, err), false)
 	}
 
 	if len(batchResponse.BlockResponses) != 1 {
@@ -651,17 +659,22 @@ func (f *finalizer) openNewWIPL2Block(ctx context.Context, prevTimestamp uint64,
 	f.wipL2Block.reservedZKCounters.PoseidonHashes = (batchResponse.ReservedZkCounters.PoseidonHashes * 2) + 2 // nolint:gomnd
 	f.wipL2Block.bytes = changeL2BlockSize
 
+	neededZKCounters, newHighZKCounters := getNeededZKCounters(f.wipBatch.imHighReservedZKCounters, f.wipL2Block.usedZKCounters, f.wipL2Block.reservedZKCounters)
 	subOverflow := false
-	fits, overflowResource := f.wipBatch.imRemainingResources.Fits(state.BatchResources{ZKCounters: f.wipL2Block.reservedZKCounters, Bytes: f.wipL2Block.bytes})
+	fits, overflowResource := f.wipBatch.imRemainingResources.Fits(state.BatchResources{ZKCounters: neededZKCounters, Bytes: f.wipL2Block.bytes})
 	if fits {
 		subOverflow, overflowResource = f.wipBatch.imRemainingResources.Sub(state.BatchResources{ZKCounters: f.wipL2Block.usedZKCounters, Bytes: f.wipL2Block.bytes})
 		if subOverflow { // Sanity check, this cannot happen as reservedZKCounters should be >= that usedZKCounters
-			log.Infof("new WIP L2 block [%d] used resources exceeds the remaining batch resources, overflow resource: %s, closing WIP batch and creating new one. Batch counters: %s, L2 block used counters: %s",
-				f.wipL2Block.trackingNum, overflowResource, f.logZKCounters(f.wipBatch.imRemainingResources.ZKCounters), f.logZKCounters(f.wipL2Block.usedZKCounters))
+			log.Infof("new wip L2 block [%d] used resources exceeds the remaining batch resources, overflow resource: %s, closing WIP batch and creating new one. counters: {batch: %s, used: %s, reserved: %s, needed: %s, high: %s}",
+				f.wipL2Block.trackingNum, overflowResource,
+				f.logZKCounters(f.wipBatch.imRemainingResources.ZKCounters), f.logZKCounters(f.wipL2Block.usedZKCounters), f.logZKCounters(f.wipL2Block.reservedZKCounters), f.logZKCounters(neededZKCounters), f.logZKCounters(f.wipBatch.imHighReservedZKCounters))
 		}
+
+		f.wipBatch.imHighReservedZKCounters = newHighZKCounters
 	} else {
-		log.Infof("new WIP L2 block [%d] reserved resources exceeds the remaining batch resources, overflow resource: %s, closing WIP batch and creating new one. Batch counters: %s, L2 block reserved counters: %s",
-			f.wipL2Block.trackingNum, overflowResource, f.logZKCounters(f.wipBatch.imRemainingResources.ZKCounters), f.logZKCounters(f.wipL2Block.reservedZKCounters))
+		log.Infof("new wip L2 block [%d] reserved resources exceeds the remaining batch resources, overflow resource: %s, closing WIP batch and creating new one. counters: {batch: %s, used: %s, reserved: %s, needed: %s, high: %s}",
+			f.wipL2Block.trackingNum, overflowResource,
+			f.logZKCounters(f.wipBatch.imRemainingResources.ZKCounters), f.logZKCounters(f.wipL2Block.usedZKCounters), f.logZKCounters(f.wipL2Block.reservedZKCounters), f.logZKCounters(neededZKCounters), f.logZKCounters(f.wipBatch.imHighReservedZKCounters))
 	}
 
 	// If reserved WIP L2 block resources don't fit in the remaining batch resources (or we got an overflow when trying to subtract the used resources)
@@ -669,7 +682,7 @@ func (f *finalizer) openNewWIPL2Block(ctx context.Context, prevTimestamp uint64,
 	if !fits || subOverflow {
 		err := f.closeAndOpenNewWIPBatch(ctx, state.ResourceExhaustedClosingReason)
 		if err != nil {
-			f.Halt(ctx, fmt.Errorf("failed to create new WIP batch [%d], error: %v", f.wipL2Block.trackingNum, err), true)
+			f.Halt(ctx, fmt.Errorf("failed to create new wip batch [%d], error: %v", f.wipL2Block.trackingNum, err), true)
 		}
 	}
 
@@ -678,9 +691,9 @@ func (f *finalizer) openNewWIPL2Block(ctx context.Context, prevTimestamp uint64,
 
 	f.wipL2Block.metrics.newL2BlockTimes.sequencer = time.Since(processStart) - f.wipL2Block.metrics.newL2BlockTimes.executor
 
-	log.Infof("created new WIP L2 block [%d], batch: %d, deltaTimestamp: %d, timestamp: %d, l1InfoTreeIndex: %d, l1InfoTreeIndexChanged: %v, oldStateRoot: %s, imStateRoot: %s, used counters: %s, reserved counters: %s",
-		f.wipL2Block.trackingNum, f.wipBatch.batchNumber, f.wipL2Block.deltaTimestamp, f.wipL2Block.timestamp, f.wipL2Block.l1InfoTreeExitRoot.L1InfoTreeIndex,
-		f.wipL2Block.l1InfoTreeExitRootChanged, oldIMStateRoot, f.wipL2Block.imStateRoot, f.logZKCounters(f.wipL2Block.usedZKCounters), f.logZKCounters(f.wipL2Block.reservedZKCounters))
+	log.Infof("created new wip L2 block [%d], batch: %d, deltaTimestamp: %d, timestamp: %d, l1InfoTreeIndex: %d, l1InfoTreeIndexChanged: %v, oldStateRoot: %s, imStateRoot: %s, counters: {used: %s, reserved: %s, needed: %s, high: %s}",
+		f.wipL2Block.trackingNum, f.wipBatch.batchNumber, f.wipL2Block.deltaTimestamp, f.wipL2Block.timestamp, f.wipL2Block.l1InfoTreeExitRoot.L1InfoTreeIndex, f.wipL2Block.l1InfoTreeExitRootChanged, oldIMStateRoot, f.wipL2Block.imStateRoot,
+		f.logZKCounters(f.wipL2Block.usedZKCounters), f.logZKCounters(f.wipL2Block.usedZKCounters), f.logZKCounters(f.wipL2Block.reservedZKCounters), f.logZKCounters(f.wipBatch.imHighReservedZKCounters))
 }
 
 // executeNewWIPL2Block executes an empty L2 Block in the executor and returns the batch response from the executor
@@ -729,7 +742,7 @@ func (f *finalizer) scheduleNextStateRootSync() {
 	f.nextStateRootSync = time.Now().Add(f.cfg.StateRootSyncInterval.Duration)
 }
 
-func (f *finalizer) waitPendingL2Blocks(ctx context.Context) {
+func (f *finalizer) waitPendingL2Blocks() {
 	// Wait until all L2 blocks are processed/discarded
 	startWait := time.Now()
 	f.pendingL2BlocksToProcessWG.Wait()
