@@ -237,6 +237,7 @@ func GenerateDataStreamFile(ctx context.Context, streamServer *datastreamer.Stre
 			}
 		default:
 			log.Errorf("Latest entry type is not an expected one: %v", latestEntry.Type)
+			currentBatchNumber++
 		}
 	}
 
