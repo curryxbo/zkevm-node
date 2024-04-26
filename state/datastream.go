@@ -236,7 +236,7 @@ func GenerateDataStreamFile(ctx context.Context, streamServer *datastreamer.Stre
 				log.Fatalf("Latest entry type is an unexpected bookmark type: %v", bookMark.Type)
 			}
 		default:
-			log.Fatalf("Latest entry type is not an expected one: %v", latestEntry.Type)
+			log.Errorf("Latest entry type is not an expected one: %v", latestEntry.Type)
 		}
 	}
 
