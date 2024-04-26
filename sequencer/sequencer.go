@@ -271,7 +271,7 @@ func (s *Sequencer) sendDataToStreamer(chainID uint64) {
 				l2Block := data
 
 				//TODO: remove this log
-				log.Infof("start atomic op for l2block %d", l2Block.L2BlockNumber)
+				log.Infof("[ds-debug] start atomic op for l2block %d", l2Block.L2BlockNumber)
 				err = s.streamServer.StartAtomicOp()
 				if err != nil {
 					log.Errorf("failed to start atomic op for l2block %d, error: %v ", l2Block.L2BlockNumber, err)
@@ -284,7 +284,7 @@ func (s *Sequencer) sendDataToStreamer(chainID uint64) {
 				}
 
 				//TODO: remove this log
-				log.Infof("add stream bookmark for l2block %d", l2Block.L2BlockNumber)
+				log.Infof("[ds-debug] add stream bookmark for l2block %d", l2Block.L2BlockNumber)
 				_, err = s.streamServer.AddStreamBookmark(bookMark.Encode())
 				if err != nil {
 					log.Errorf("failed to add stream bookmark for l2block %d, error: %v", l2Block.L2BlockNumber, err)
@@ -300,7 +300,7 @@ func (s *Sequencer) sendDataToStreamer(chainID uint64) {
 					}
 
 					//TODO: remove this log
-					log.Infof("get previous l2block %d", l2Block.L2BlockNumber-1)
+					log.Infof("[ds-debug] get previous l2block %d", l2Block.L2BlockNumber-1)
 					previousL2BlockEntry, err := s.streamServer.GetFirstEventAfterBookmark(bookMark.Encode())
 					if err != nil {
 						log.Errorf("failed to get previous l2block %d, error: %v", l2Block.L2BlockNumber-1, err)
@@ -324,7 +324,7 @@ func (s *Sequencer) sendDataToStreamer(chainID uint64) {
 				}
 
 				//TODO: remove this log
-				log.Infof("add l2blockStart stream entry for l2block %d", l2Block.L2BlockNumber)
+				log.Infof("[ds-debug] add l2blockStart stream entry for l2block %d", l2Block.L2BlockNumber)
 				_, err = s.streamServer.AddStreamEntry(state.EntryTypeL2BlockStart, blockStart.Encode())
 				if err != nil {
 					log.Errorf("failed to add stream entry for l2block %d, error: %v", l2Block.L2BlockNumber, err)
@@ -332,7 +332,7 @@ func (s *Sequencer) sendDataToStreamer(chainID uint64) {
 				}
 
 				//TODO: remove this log
-				log.Infof("adding l2tx stream entries for l2block %d", l2Block.L2BlockNumber)
+				log.Infof("[ds-debug] adding l2tx stream entries for l2block %d", l2Block.L2BlockNumber)
 				for _, l2Transaction := range l2Block.Txs {
 					_, err = s.streamServer.AddStreamEntry(state.EntryTypeL2Tx, l2Transaction.Encode())
 					if err != nil {
@@ -348,7 +348,7 @@ func (s *Sequencer) sendDataToStreamer(chainID uint64) {
 				}
 
 				//TODO: remove this log
-				log.Infof("add l2blockEnd stream entry for l2block %d", l2Block.L2BlockNumber)
+				log.Infof("[ds-debug] add l2blockEnd stream entry for l2block %d", l2Block.L2BlockNumber)
 				_, err = s.streamServer.AddStreamEntry(state.EntryTypeL2BlockEnd, blockEnd.Encode())
 				if err != nil {
 					log.Errorf("failed to add stream entry for l2block %d, error: %v", l2Block.L2BlockNumber, err)
@@ -356,7 +356,7 @@ func (s *Sequencer) sendDataToStreamer(chainID uint64) {
 				}
 
 				//TODO: remove this log
-				log.Infof("commit atomic op for l2block %d", l2Block.L2BlockNumber)
+				log.Infof("[ds-debug] commit atomic op for l2block %d", l2Block.L2BlockNumber)
 				err = s.streamServer.CommitAtomicOp()
 				if err != nil {
 					log.Errorf("failed to commit atomic op for l2block %d, error: %v ", l2Block.L2BlockNumber, err)
@@ -364,7 +364,7 @@ func (s *Sequencer) sendDataToStreamer(chainID uint64) {
 				}
 
 				//TODO: remove this log
-				log.Infof("l2block %d sent to datastream", l2Block.L2BlockNumber)
+				log.Infof("[ds-debug] l2block %d sent to datastream", l2Block.L2BlockNumber)
 
 			// Stream a bookmark
 			case state.DSBookMark:

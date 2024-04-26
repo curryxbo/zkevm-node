@@ -87,16 +87,18 @@ func (f *finalizer) setWIPBatch(ctx context.Context, wipStateBatch *state.Batch)
 	}
 
 	wipBatch := &Batch{
-		batchNumber:             wipStateBatch.BatchNumber,
-		coinbase:                wipStateBatch.Coinbase,
-		imStateRoot:             wipStateBatch.StateRoot,
-		initialStateRoot:        prevStateBatch.StateRoot,
-		finalStateRoot:          wipStateBatch.StateRoot,
-		timestamp:               wipStateBatch.Timestamp,
-		countOfL2Blocks:         len(wipStateBatchBlocks.Blocks),
-		countOfTxs:              wipStateBatchCountOfTxs,
-		imRemainingResources:    remainingResources,
-		finalRemainingResources: remainingResources,
+		batchNumber:                 wipStateBatch.BatchNumber,
+		coinbase:                    wipStateBatch.Coinbase,
+		imStateRoot:                 wipStateBatch.StateRoot,
+		initialStateRoot:            prevStateBatch.StateRoot,
+		finalStateRoot:              wipStateBatch.StateRoot,
+		timestamp:                   wipStateBatch.Timestamp,
+		countOfL2Blocks:             len(wipStateBatchBlocks.Blocks),
+		countOfTxs:                  wipStateBatchCountOfTxs,
+		imRemainingResources:        remainingResources,
+		finalRemainingResources:     remainingResources,
+		imHighReservedZKCounters:    wipStateBatch.HighReservedZKCounters,
+		finalHighReservedZKCounters: wipStateBatch.HighReservedZKCounters,
 	}
 
 	return wipBatch, nil
@@ -284,7 +286,7 @@ func (f *finalizer) closeAndOpenNewWIPBatch(ctx context.Context, closeReason sta
 		f.wipL2Block.batch = f.wipBatch
 
 		// We subtract the wip L2 block used resources to the new wip batch
-		overflow, overflowResource := f.wipBatch.imRemainingResources.Sub(state.BatchResources{ZKCounters: f.wipL2Block.usedZKCounters, Bytes: f.wipL2Block.bytes})
+		overflow, overflowResource := f.wipBatch.imRemainingResources.Sub(state.BatchResources{ZKCounters: f.wipL2Block.usedZKCountersOnNew, Bytes: f.wipL2Block.bytes})
 		if overflow {
 			return fmt.Errorf("failed to subtract L2 block [%d] used resources to new wip batch %d, overflow resource: %s",
 				f.wipL2Block.trackingNum, f.wipBatch.batchNumber, overflowResource)
