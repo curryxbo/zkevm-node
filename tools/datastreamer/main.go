@@ -54,8 +54,15 @@ var (
 	batchFlag = cli.Uint64Flag{
 		Name:     "batch",
 		Aliases:  []string{"bn"},
-		Usage:    "batch `NUMBER`",
+		Usage:    "Batch `NUMBER`",
 		Required: true,
+	}
+
+	yesFlag = cli.BoolFlag{
+		Name:     "yes",
+		Aliases:  []string{"y"},
+		Usage:    "Set parameter to true",
+		Required: false,
 	}
 )
 
@@ -148,20 +155,22 @@ func main() {
 			Name:    "dump-batch",
 			Aliases: []string{},
 			Usage:   "Dumps a batch to file",
-			Action:  dumpBatch,
+			Action:  decodeBatch,
 			Flags: []cli.Flag{
 				&configFileFlag,
 				&batchFlag,
+				&yesFlag,
 			},
 		},
 		{
 			Name:    "dump-batch-offline",
 			Aliases: []string{},
 			Usage:   "Dumps a batch to file offline",
-			Action:  dumpBatchOffline,
+			Action:  decodeBatchOffline,
 			Flags: []cli.Flag{
 				&configFileFlag,
 				&batchFlag,
+				&yesFlag,
 			},
 		},
 	}
@@ -418,78 +427,6 @@ func decodeL2Block(cliCtx *cli.Context) error {
 	return nil
 }
 
-func decodeBatch(cliCtx *cli.Context) error {
-	c, err := config.Load(cliCtx)
-	if err != nil {
-		log.Error(err)
-		os.Exit(1)
-	}
-
-	log.Init(c.Log)
-
-	client, err := datastreamer.NewClient(c.Online.URI, c.Online.StreamType)
-	if err != nil {
-		log.Error(err)
-		os.Exit(1)
-	}
-
-	err = client.Start()
-	if err != nil {
-		log.Error(err)
-		os.Exit(1)
-	}
-
-	batchNumber := cliCtx.Uint64("batch")
-
-	bookMark := &datastream.BookMark{
-		Type:  datastream.BookmarkType_BOOKMARK_TYPE_BATCH,
-		Value: batchNumber,
-	}
-
-	marshalledBookMark, err := proto.Marshal(bookMark)
-	if err != nil {
-		return err
-	}
-
-	firstEntry, err := client.ExecCommandGetBookmark(marshalledBookMark)
-	if err != nil {
-		log.Error(err)
-		os.Exit(1)
-	}
-	printEntry(firstEntry)
-
-	secondEntry, err := client.ExecCommandGetEntry(firstEntry.Number + 1)
-	if err != nil {
-		log.Error(err)
-		os.Exit(1)
-	}
-	printEntry(secondEntry)
-
-	i := uint64(2) //nolint:gomnd
-	for {
-		entry, err := client.ExecCommandGetEntry(firstEntry.Number + i)
-		if err != nil {
-			log.Error(err)
-			os.Exit(1)
-		}
-
-		if entry.Type == state.EntryTypeBookMark {
-			if err := proto.Unmarshal(entry.Data, bookMark); err != nil {
-				return err
-			}
-			if bookMark.Type == datastream.BookmarkType_BOOKMARK_TYPE_BATCH {
-				break
-			}
-		}
-
-		secondEntry = entry
-		printEntry(secondEntry)
-		i++
-	}
-
-	return nil
-}
-
 func decodeEntryOffline(cliCtx *cli.Context) error {
 	c, err := config.Load(cliCtx)
 	if err != nil {
@@ -571,71 +508,6 @@ func decodeL2BlockOffline(cliCtx *cli.Context) error {
 	return nil
 }
 
-func decodeBatchOffline(cliCtx *cli.Context) error {
-	c, err := config.Load(cliCtx)
-	if err != nil {
-		log.Error(err)
-		os.Exit(1)
-	}
-
-	log.Init(c.Log)
-
-	streamServer, err := initializeStreamServer(c)
-	if err != nil {
-		log.Error(err)
-		os.Exit(1)
-	}
-
-	batchNumber := cliCtx.Uint64("batch")
-
-	bookMark := &datastream.BookMark{
-		Type:  datastream.BookmarkType_BOOKMARK_TYPE_BATCH,
-		Value: batchNumber,
-	}
-
-	marshalledBookMark, err := proto.Marshal(bookMark)
-	if err != nil {
-		return err
-	}
-
-	firstEntry, err := streamServer.GetFirstEventAfterBookmark(marshalledBookMark)
-	if err != nil {
-		log.Error(err)
-		os.Exit(1)
-	}
-	printEntry(firstEntry)
-
-	secondEntry, err := streamServer.GetEntry(firstEntry.Number + 1)
-	if err != nil {
-		log.Error(err)
-		os.Exit(1)
-	}
-
-	i := uint64(2) //nolint:gomnd
-	printEntry(secondEntry)
-	for {
-		secondEntry, err = streamServer.GetEntry(firstEntry.Number + i)
-		if err != nil {
-			log.Error(err)
-			os.Exit(1)
-		}
-
-		if secondEntry.Type == state.EntryTypeBookMark {
-			if err := proto.Unmarshal(secondEntry.Data, bookMark); err != nil {
-				return err
-			}
-			if bookMark.Type == datastream.BookmarkType_BOOKMARK_TYPE_BATCH {
-				break
-			}
-		}
-
-		printEntry(secondEntry)
-		i++
-	}
-
-	return nil
-}
-
 func truncate(cliCtx *cli.Context) error {
 	c, err := config.Load(cliCtx)
 	if err != nil {
@@ -662,7 +534,7 @@ func truncate(cliCtx *cli.Context) error {
 	return nil
 }
 
-func dumpBatch(cliCtx *cli.Context) error {
+func decodeBatch(cliCtx *cli.Context) error {
 	var batchData = []byte{}
 	c, err := config.Load(cliCtx)
 	if err != nil {
@@ -738,16 +610,18 @@ func dumpBatch(cliCtx *cli.Context) error {
 	}
 
 	// Dump batchdata to a file
-	err = os.WriteFile(fmt.Sprintf("batch_%d.bin", batchNumber), batchData, 0644) // nolint:gosec, gomnd
-	if err != nil {
-		log.Error(err)
-		os.Exit(1)
+	if cliCtx.Bool("yes") {
+		err = os.WriteFile(fmt.Sprintf("batch_%d.bin", batchNumber), batchData, 0644) // nolint:gosec, gomnd
+		if err != nil {
+			log.Error(err)
+			os.Exit(1)
+		}
 	}
 
 	return nil
 }
 
-func dumpBatchOffline(cliCtx *cli.Context) error {
+func decodeBatchOffline(cliCtx *cli.Context) error {
 	var batchData = []byte{}
 	c, err := config.Load(cliCtx)
 	if err != nil {
@@ -814,10 +688,12 @@ func dumpBatchOffline(cliCtx *cli.Context) error {
 	}
 
 	// Dump batchdata to a file
-	err = os.WriteFile(fmt.Sprintf("offline_batch_%d.bin", batchNumber), batchData, 0644) // nolint:gosec, gomnd
-	if err != nil {
-		log.Error(err)
-		os.Exit(1)
+	if cliCtx.Bool("yes") {
+		err = os.WriteFile(fmt.Sprintf("offline_batch_%d.bin", batchNumber), batchData, 0644) // nolint:gosec, gomnd
+		if err != nil {
+			log.Error(err)
+			os.Exit(1)
+		}
 	}
 
 	return nil
