@@ -144,6 +144,26 @@ func main() {
 				&entryFlag,
 			},
 		},
+		{
+			Name:    "dump-batch",
+			Aliases: []string{},
+			Usage:   "Dumps a batch to file",
+			Action:  dumpBatch,
+			Flags: []cli.Flag{
+				&configFileFlag,
+				&batchFlag,
+			},
+		},
+		{
+			Name:    "dump-batch-offline",
+			Aliases: []string{},
+			Usage:   "Dumps a batch to file offline",
+			Action:  dumpBatchOffline,
+			Flags: []cli.Flag{
+				&configFileFlag,
+				&batchFlag,
+			},
+		},
 	}
 
 	err := app.Run(os.Args)
@@ -638,6 +658,167 @@ func truncate(cliCtx *cli.Context) error {
 	}
 
 	printColored(color.FgGreen, "File truncated\n")
+
+	return nil
+}
+
+func dumpBatch(cliCtx *cli.Context) error {
+	var batchData = []byte{}
+	c, err := config.Load(cliCtx)
+	if err != nil {
+		log.Error(err)
+		os.Exit(1)
+	}
+
+	log.Init(c.Log)
+
+	client, err := datastreamer.NewClient(c.Online.URI, c.Online.StreamType)
+	if err != nil {
+		log.Error(err)
+		os.Exit(1)
+	}
+
+	err = client.Start()
+	if err != nil {
+		log.Error(err)
+		os.Exit(1)
+	}
+
+	batchNumber := cliCtx.Uint64("batch")
+
+	bookMark := &datastream.BookMark{
+		Type:  datastream.BookmarkType_BOOKMARK_TYPE_BATCH,
+		Value: batchNumber,
+	}
+
+	marshalledBookMark, err := proto.Marshal(bookMark)
+	if err != nil {
+		return err
+	}
+
+	firstEntry, err := client.ExecCommandGetBookmark(marshalledBookMark)
+	if err != nil {
+		log.Error(err)
+		os.Exit(1)
+	}
+	printEntry(firstEntry)
+
+	batchData = append(batchData, firstEntry.Data...)
+
+	secondEntry, err := client.ExecCommandGetEntry(firstEntry.Number + 1)
+	if err != nil {
+		log.Error(err)
+		os.Exit(1)
+	}
+	printEntry(secondEntry)
+
+	batchData = append(batchData, secondEntry.Data...)
+
+	i := uint64(2) //nolint:gomnd
+	for {
+		entry, err := client.ExecCommandGetEntry(firstEntry.Number + i)
+		if err != nil {
+			log.Error(err)
+			os.Exit(1)
+		}
+
+		if entry.Type == state.EntryTypeBookMark {
+			if err := proto.Unmarshal(entry.Data, bookMark); err != nil {
+				return err
+			}
+			if bookMark.Type == datastream.BookmarkType_BOOKMARK_TYPE_BATCH {
+				break
+			}
+		}
+
+		secondEntry = entry
+		printEntry(secondEntry)
+		batchData = append(batchData, secondEntry.Data...)
+		i++
+	}
+
+	// Dump batchdata to a file
+	err = os.WriteFile(fmt.Sprintf("batch_%d.bin", batchNumber), batchData, 0644) // nolint:gosec, gomnd
+	if err != nil {
+		log.Error(err)
+		os.Exit(1)
+	}
+
+	return nil
+}
+
+func dumpBatchOffline(cliCtx *cli.Context) error {
+	var batchData = []byte{}
+	c, err := config.Load(cliCtx)
+	if err != nil {
+		log.Error(err)
+		os.Exit(1)
+	}
+
+	log.Init(c.Log)
+
+	streamServer, err := initializeStreamServer(c)
+	if err != nil {
+		log.Error(err)
+		os.Exit(1)
+	}
+
+	batchNumber := cliCtx.Uint64("batch")
+
+	bookMark := &datastream.BookMark{
+		Type:  datastream.BookmarkType_BOOKMARK_TYPE_BATCH,
+		Value: batchNumber,
+	}
+
+	marshalledBookMark, err := proto.Marshal(bookMark)
+	if err != nil {
+		return err
+	}
+
+	firstEntry, err := streamServer.GetFirstEventAfterBookmark(marshalledBookMark)
+	if err != nil {
+		log.Error(err)
+		os.Exit(1)
+	}
+	printEntry(firstEntry)
+	batchData = append(batchData, firstEntry.Data...)
+
+	secondEntry, err := streamServer.GetEntry(firstEntry.Number + 1)
+	if err != nil {
+		log.Error(err)
+		os.Exit(1)
+	}
+
+	i := uint64(2) //nolint:gomnd
+	printEntry(secondEntry)
+	batchData = append(batchData, secondEntry.Data...)
+	for {
+		secondEntry, err = streamServer.GetEntry(firstEntry.Number + i)
+		if err != nil {
+			log.Error(err)
+			os.Exit(1)
+		}
+
+		if secondEntry.Type == state.EntryTypeBookMark {
+			if err := proto.Unmarshal(secondEntry.Data, bookMark); err != nil {
+				return err
+			}
+			if bookMark.Type == datastream.BookmarkType_BOOKMARK_TYPE_BATCH {
+				break
+			}
+		}
+
+		printEntry(secondEntry)
+		batchData = append(batchData, secondEntry.Data...)
+		i++
+	}
+
+	// Dump batchdata to a file
+	err = os.WriteFile(fmt.Sprintf("offline_batch_%d.bin", batchNumber), batchData, 0644) // nolint:gosec, gomnd
+	if err != nil {
+		log.Error(err)
+		os.Exit(1)
+	}
 
 	return nil
 }

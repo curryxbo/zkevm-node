@@ -6,12 +6,14 @@ check-go:
 
 # Targets that require the checks
 generate-file: check-go
-reprocess: check-go
 decode-entry-offline: check-go
 decode-l2block-offline: check-go
 decode-entry: check-go
 decode-l2block: check-go
+decode-batch: check-go
+decode-batch-offline: check-go
 truncate: check-go
+dump-batch: check-go
 
 arguments := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
 
@@ -46,6 +48,14 @@ decode-batch-offline: ## Runs the offline tool to decode a given batch
 .PHONY: truncate
 truncate: ## Runs the offline tool to truncate the stream file
 	go run main.go truncate -cfg config/tool.config.toml -entry $(arguments)
+
+.PHONY: dump-batch
+dump-batch: ## Runs the tool to dump a given batch to file
+	go run main.go dump-batch -cfg config/tool.config.toml -batch $(arguments)
+
+.PHONY: dump-batch-offline
+dump-batch: ## Runs the tool to dump a given batch to file offline
+	go run main.go dump-batch-offline -cfg config/tool.config.toml -batch $(arguments)
 
 ## Help display.
 ## Pulls comments from beside commands and prints a nicely formatted
