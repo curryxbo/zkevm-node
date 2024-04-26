@@ -54,7 +54,7 @@ dump-batch: ## Runs the tool to dump a given batch to file
 	go run main.go dump-batch -cfg config/tool.config.toml -batch $(arguments)
 
 .PHONY: dump-batch-offline
-dump-batch: ## Runs the tool to dump a given batch to file offline
+dump-batch-offline: ## Runs the tool to dump a given batch to file offline
 	go run main.go dump-batch-offline -cfg config/tool.config.toml -batch $(arguments)
 
 ## Help display.
