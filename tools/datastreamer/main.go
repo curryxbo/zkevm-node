@@ -610,7 +610,7 @@ func decodeBatch(cliCtx *cli.Context) error {
 	}
 
 	// Dump batchdata to a file
-	if cliCtx.Bool("yes") {
+	if cliCtx.Bool("dump") {
 		err = os.WriteFile(fmt.Sprintf("batch_%d.bin", batchNumber), batchData, 0644) // nolint:gosec, gomnd
 		if err != nil {
 			log.Error(err)
@@ -688,7 +688,7 @@ func decodeBatchOffline(cliCtx *cli.Context) error {
 	}
 
 	// Dump batchdata to a file
-	if cliCtx.Bool("yes") {
+	if cliCtx.Bool("dump") {
 		err = os.WriteFile(fmt.Sprintf("offline_batch_%d.bin", batchNumber), batchData, 0644) // nolint:gosec, gomnd
 		if err != nil {
 			log.Error(err)
