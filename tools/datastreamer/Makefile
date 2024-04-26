@@ -51,11 +51,11 @@ truncate: ## Runs the offline tool to truncate the stream file
 
 .PHONY: dump-batch
 dump-batch: ## Runs the tool to dump a given batch to file
-	go run main.go dump-batch -cfg config/tool.config.toml -y -batch $(arguments)
+	go run main.go dump-batch -cfg config/tool.config.toml -d -batch $(arguments)
 
 .PHONY: dump-batch-offline
 dump-batch-offline: ## Runs the tool to dump a given batch to file offline
-	go run main.go dump-batch-offline -cfg config/tool.config.toml -y -batch $(arguments)
+	go run main.go dump-batch-offline -cfg config/tool.config.toml -d -batch $(arguments)
 
 ## Help display.
 ## Pulls comments from beside commands and prints a nicely formatted

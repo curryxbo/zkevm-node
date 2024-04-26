@@ -58,10 +58,10 @@ var (
 		Required: true,
 	}
 
-	yesFlag = cli.BoolFlag{
-		Name:     "yes",
-		Aliases:  []string{"y"},
-		Usage:    "Set parameter to true",
+	dumpFlag = cli.BoolFlag{
+		Name:     "dump",
+		Aliases:  []string{"d"},
+		Usage:    "Dump batch to file",
 		Required: false,
 	}
 )
@@ -159,7 +159,7 @@ func main() {
 			Flags: []cli.Flag{
 				&configFileFlag,
 				&batchFlag,
-				&yesFlag,
+				&dumpFlag,
 			},
 		},
 		{
@@ -170,7 +170,7 @@ func main() {
 			Flags: []cli.Flag{
 				&configFileFlag,
 				&batchFlag,
-				&yesFlag,
+				&dumpFlag,
 			},
 		},
 	}
