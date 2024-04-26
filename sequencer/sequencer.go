@@ -325,6 +325,7 @@ func (s *Sequencer) sendDataToStreamer(chainID uint64) {
 					Hash:            l2Block.BlockHash.Bytes(),
 					StateRoot:       l2Block.StateRoot.Bytes(),
 					GlobalExitRoot:  l2Block.GlobalExitRoot.Bytes(),
+					Coinbase:        l2Block.Coinbase.Bytes(),
 				}
 
 				marshalledL2Block, err := proto.Marshal(streamL2Block)
