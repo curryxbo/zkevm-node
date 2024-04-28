@@ -222,6 +222,46 @@ func GenerateDataStreamFile(ctx context.Context, streamServer *datastreamer.Stre
 			currentBatchNumber = l2Block.BatchNumber
 			previousTimestamp = l2Block.Timestamp
 			lastAddedL2BlockNumber = currentL2BlockNumber
+		case datastreamer.EntryType(datastream.EntryType_ENTRY_TYPE_TRANSACTION):
+			log.Info("Latest entry type is Transaction")
+
+			transaction := &datastream.Transaction{}
+			if err := proto.Unmarshal(latestEntry.Data, transaction); err != nil {
+				return err
+			}
+
+			currentL2BlockNumber := transaction.L2BlockNumber
+			currentBatchNumber = transaction.L2BlockNumber
+			lastAddedL2BlockNumber = currentL2BlockNumber
+
+			// Get Previous l2block timestamp
+			bookMark := &datastream.BookMark{
+				Type:  datastream.BookmarkType_BOOKMARK_TYPE_L2_BLOCK,
+				Value: currentL2BlockNumber - 1,
+			}
+
+			marshalledBookMark, err := proto.Marshal(bookMark)
+			if err != nil {
+				return err
+			}
+
+			prevL2BlockEntryNumber, err := streamServer.GetBookmark(marshalledBookMark)
+			if err != nil {
+				return err
+			}
+
+			prevL2BlockEntry, err := streamServer.GetEntry(prevL2BlockEntryNumber)
+			if err != nil {
+				return err
+			}
+
+			prevL2Block := &datastream.L2Block{}
+			if err := proto.Unmarshal(prevL2BlockEntry.Data, prevL2Block); err != nil {
+				return err
+			}
+
+			previousTimestamp = prevL2Block.Timestamp
+
 		case EntryTypeBookMark:
 			log.Info("Latest entry type is BookMark")
 
@@ -236,8 +276,7 @@ func GenerateDataStreamFile(ctx context.Context, streamServer *datastreamer.Stre
 				log.Fatalf("Latest entry type is an unexpected bookmark type: %v", bookMark.Type)
 			}
 		default:
-			log.Errorf("Latest entry type is not an expected one: %v", latestEntry.Type)
-			currentBatchNumber++
+			log.Fatalf("Latest entry type is not an expected one: %v", latestEntry.Type)
 		}
 	}
 
