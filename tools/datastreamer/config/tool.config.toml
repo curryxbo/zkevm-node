@@ -4,7 +4,7 @@ StreamType = 1
 
 [Offline]
 Port = 6901
-Filename = "/Users/toni/polygon/zkevm-node/test/datastream.bin"
+Filename = "datastream.bin"
 Version = 3
 ChainID = 1440
 UpgradeEtrogBatchNumber = 0
