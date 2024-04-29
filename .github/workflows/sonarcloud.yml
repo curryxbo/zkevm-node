@@ -4,7 +4,9 @@ on:
   push:
     branches:
       - develop
-      - feature/sonarcloud-coverage
+      - 'release/**'
+      - 'feature/**'
+      - sonarcloud-update
 
 jobs:
   sonarcloud:
