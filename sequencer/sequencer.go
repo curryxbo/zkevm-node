@@ -336,7 +336,7 @@ func (s *Sequencer) sendDataToStreamer(chainID uint64) {
 
 				//TODO: remove this log
 				log.Infof("add l2blockStart stream entry for l2block %d", l2Block.L2BlockNumber)
-				_, err = s.streamServer.AddStreamEntry(datastreamer.EntryType(datastream.BookmarkType_BOOKMARK_TYPE_L2_BLOCK), marshalledL2Block)
+				_, err = s.streamServer.AddStreamEntry(datastreamer.EntryType(datastream.EntryType_ENTRY_TYPE_L2_BLOCK), marshalledL2Block)
 				if err != nil {
 					log.Errorf("failed to add stream entry for l2block %d, error: %v", l2Block.L2BlockNumber, err)
 					continue
