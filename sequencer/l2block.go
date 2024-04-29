@@ -207,7 +207,7 @@ func (f *finalizer) processL2Block(ctx context.Context, l2Block *L2Block) error 
 		l2Block.trackingNum, l2Block.batch.batchNumber, l2Block.deltaTimestamp, l2Block.timestamp, l2Block.l1InfoTreeExitRoot.L1InfoTreeIndex,
 		l2Block.l1InfoTreeExitRootChanged, initialStateRoot, len(l2Block.transactions))
 
-	batchResponse, batchL2DataSize, err := f.executeL2Block(ctx, initialStateRoot, l2Block)
+	batchResponse, batchL2DataSize, contextId, err := f.executeL2Block(ctx, initialStateRoot, l2Block)
 
 	/*if !l2Block.isEmpty() && rand.Intn(6) == 1 {
 		err = ErrProcessBatchOOC
@@ -286,10 +286,10 @@ func (f *finalizer) processL2Block(ctx context.Context, l2Block *L2Block) error 
 	}
 	f.metrics.addL2BlockMetrics(l2Block.metrics)
 
-	log.Infof("processed L2 block %d [%d], batch: %d, deltaTimestamp: %d, timestamp: %d, l1InfoTreeIndex: %d, l1InfoTreeIndexChanged: %v, initialStateRoot: %s, newStateRoot: %s, txs: %d/%d, blockHash: %s, infoRoot: %s, counters: {used: %s, reserved: %s, needed: %s, high: %s}",
+	log.Infof("processed L2 block %d [%d], batch: %d, deltaTimestamp: %d, timestamp: %d, l1InfoTreeIndex: %d, l1InfoTreeIndexChanged: %v, initialStateRoot: %s, newStateRoot: %s, txs: %d/%d, blockHash: %s, infoRoot: %s, counters: {used: %s, reserved: %s, needed: %s, high: %s}, contextId: %s",
 		blockResponse.BlockNumber, l2Block.trackingNum, l2Block.batch.batchNumber, l2Block.deltaTimestamp, l2Block.timestamp, l2Block.l1InfoTreeExitRoot.L1InfoTreeIndex, l2Block.l1InfoTreeExitRootChanged, initialStateRoot, l2Block.batchResponse.NewStateRoot,
 		len(l2Block.transactions), len(blockResponse.TransactionResponses), blockResponse.BlockHash, blockResponse.BlockInfoRoot,
-		f.logZKCounters(batchResponse.UsedZkCounters), f.logZKCounters(batchResponse.ReservedZkCounters), f.logZKCounters(neededZKCounters), f.logZKCounters(l2Block.batch.finalHighReservedZKCounters))
+		f.logZKCounters(batchResponse.UsedZkCounters), f.logZKCounters(batchResponse.ReservedZkCounters), f.logZKCounters(neededZKCounters), f.logZKCounters(l2Block.batch.finalHighReservedZKCounters), contextId)
 
 	if f.cfg.Metrics.EnableLog {
 		log.Infof("metrics-log: {l2block: {num: %d, trackingNum: %d, metrics: {%s}}, interval: {startAt: %d, metrics: {%s}}}",
@@ -300,7 +300,7 @@ func (f *finalizer) processL2Block(ctx context.Context, l2Block *L2Block) error 
 }
 
 // executeL2Block executes a L2 Block in the executor and returns the batch response from the executor and the batchL2Data size
-func (f *finalizer) executeL2Block(ctx context.Context, initialStateRoot common.Hash, l2Block *L2Block) (*state.ProcessBatchResponse, uint64, error) {
+func (f *finalizer) executeL2Block(ctx context.Context, initialStateRoot common.Hash, l2Block *L2Block) (*state.ProcessBatchResponse, uint64, string, error) {
 	executeL2BLockError := func(err error) {
 		log.Errorf("execute L2 block [%d] error %v, batch: %d, initialStateRoot: %s", l2Block.trackingNum, err, l2Block.batch.batchNumber, initialStateRoot)
 		// Log batch detailed info
@@ -320,7 +320,7 @@ func (f *finalizer) executeL2Block(ctx context.Context, initialStateRoot common.
 		epHex, err := hex.DecodeHex(fmt.Sprintf("%x", tx.EGPPercentage))
 		if err != nil {
 			log.Errorf("error decoding hex value for effective gas price percentage for tx %s, error: %v", tx.HashStr, err)
-			return nil, 0, err
+			return nil, 0, "", err
 		}
 
 		txData := append(tx.RawTx, epHex...)
@@ -348,31 +348,26 @@ func (f *finalizer) executeL2Block(ctx context.Context, initialStateRoot common.
 		MinTimestamp:   uint64(l2Block.l1InfoTreeExitRoot.GlobalExitRoot.Timestamp.Unix()),
 	}
 
-	var (
-		err           error
-		batchResponse *state.ProcessBatchResponse
-	)
-
 	executionStart := time.Now()
-	batchResponse, err = f.stateIntf.ProcessBatchV2(ctx, batchRequest, true)
+	batchResponse, contextId, err := f.stateIntf.ProcessBatchV2(ctx, batchRequest, true)
 	l2Block.metrics.l2BlockTimes.executor = time.Since(executionStart)
 
 	if err != nil {
 		executeL2BLockError(err)
-		return nil, 0, err
+		return nil, 0, contextId, err
 	}
 
 	if batchResponse.ExecutorError != nil {
 		executeL2BLockError(batchResponse.ExecutorError)
-		return nil, 0, ErrExecutorError
+		return nil, 0, contextId, ErrExecutorError
 	}
 
 	if batchResponse.IsRomOOCError {
 		executeL2BLockError(batchResponse.RomError_V2)
-		return nil, 0, ErrProcessBatchOOC
+		return nil, 0, contextId, ErrProcessBatchOOC
 	}
 
-	return batchResponse, uint64(len(batchL2Data)), nil
+	return batchResponse, uint64(len(batchL2Data)), contextId, nil
 }
 
 // storeL2Block stores the L2 block in the state and updates the related batch and transactions
@@ -641,7 +636,7 @@ func (f *finalizer) openNewWIPL2Block(ctx context.Context, prevTimestamp uint64,
 		f.wipL2Block.trackingNum, f.wipBatch.batchNumber, f.wipL2Block.deltaTimestamp, f.wipL2Block.timestamp, f.wipL2Block.l1InfoTreeExitRoot.L1InfoTreeIndex, f.wipL2Block.l1InfoTreeExitRootChanged)
 
 	// We process (execute) the new wip L2 block to update the imStateRoot and also get the counters used by the wip l2block
-	batchResponse, err := f.executeNewWIPL2Block(ctx)
+	batchResponse, contextId, err := f.executeNewWIPL2Block(ctx)
 	if err != nil {
 		f.Halt(ctx, fmt.Errorf("failed to execute new wip L2 block [%d], error: %v ", f.wipL2Block.trackingNum, err), false)
 	}
@@ -695,13 +690,13 @@ func (f *finalizer) openNewWIPL2Block(ctx context.Context, prevTimestamp uint64,
 
 	f.wipL2Block.metrics.newL2BlockTimes.sequencer = time.Since(processStart) - f.wipL2Block.metrics.newL2BlockTimes.executor
 
-	log.Infof("created new wip L2 block [%d], batch: %d, deltaTimestamp: %d, timestamp: %d, l1InfoTreeIndex: %d, l1InfoTreeIndexChanged: %v, oldStateRoot: %s, imStateRoot: %s, counters: {used: %s, reserved: %s, needed: %s, high: %s}",
+	log.Infof("created new wip L2 block [%d], batch: %d, deltaTimestamp: %d, timestamp: %d, l1InfoTreeIndex: %d, l1InfoTreeIndexChanged: %v, oldStateRoot: %s, imStateRoot: %s, counters: {used: %s, reserved: %s, needed: %s, high: %s}, contextId: %s",
 		f.wipL2Block.trackingNum, f.wipBatch.batchNumber, f.wipL2Block.deltaTimestamp, f.wipL2Block.timestamp, f.wipL2Block.l1InfoTreeExitRoot.L1InfoTreeIndex, f.wipL2Block.l1InfoTreeExitRootChanged, oldIMStateRoot, f.wipL2Block.imStateRoot,
-		f.logZKCounters(f.wipL2Block.usedZKCountersOnNew), f.logZKCounters(f.wipL2Block.usedZKCountersOnNew), f.logZKCounters(f.wipL2Block.reservedZKCountersOnNew), f.logZKCounters(f.wipBatch.imHighReservedZKCounters))
+		f.logZKCounters(f.wipL2Block.usedZKCountersOnNew), f.logZKCounters(f.wipL2Block.usedZKCountersOnNew), f.logZKCounters(f.wipL2Block.reservedZKCountersOnNew), f.logZKCounters(f.wipBatch.imHighReservedZKCounters), contextId)
 }
 
 // executeNewWIPL2Block executes an empty L2 Block in the executor and returns the batch response from the executor
-func (f *finalizer) executeNewWIPL2Block(ctx context.Context) (*state.ProcessBatchResponse, error) {
+func (f *finalizer) executeNewWIPL2Block(ctx context.Context) (*state.ProcessBatchResponse, string, error) {
 	batchRequest := state.ProcessRequest{
 		BatchNumber:               f.wipBatch.batchNumber,
 		OldStateRoot:              f.wipBatch.imStateRoot,
@@ -724,22 +719,22 @@ func (f *finalizer) executeNewWIPL2Block(ctx context.Context) (*state.ProcessBat
 	}
 
 	executorTime := time.Now()
-	batchResponse, err := f.stateIntf.ProcessBatchV2(ctx, batchRequest, false)
+	batchResponse, contextId, err := f.stateIntf.ProcessBatchV2(ctx, batchRequest, false)
 	f.wipL2Block.metrics.newL2BlockTimes.executor = time.Since(executorTime)
 
 	if err != nil {
-		return nil, err
+		return nil, contextId, err
 	}
 
 	if batchResponse.ExecutorError != nil {
-		return nil, ErrExecutorError
+		return nil, contextId, ErrExecutorError
 	}
 
 	if batchResponse.IsRomOOCError {
-		return nil, ErrProcessBatchOOC
+		return nil, contextId, ErrProcessBatchOOC
 	}
 
-	return batchResponse, nil
+	return batchResponse, contextId, nil
 }
 
 func (f *finalizer) scheduleNextStateRootSync() {

@@ -557,7 +557,7 @@ func (f *finalizer) processTransaction(ctx context.Context, tx *TxTracker, first
 	batchRequest.Transactions = append(batchRequest.Transactions, effectivePercentageAsDecodedHex...)
 
 	executionStart := time.Now()
-	batchResponse, err := f.stateIntf.ProcessBatchV2(ctx, batchRequest, false)
+	batchResponse, contextId, err := f.stateIntf.ProcessBatchV2(ctx, batchRequest, false)
 	executionTime := time.Since(executionStart)
 	f.wipL2Block.metrics.transactionsTimes.executor += executionTime
 
@@ -593,9 +593,9 @@ func (f *finalizer) processTransaction(ctx context.Context, tx *TxTracker, first
 		// Update imStateRoot
 		f.wipBatch.imStateRoot = batchResponse.NewStateRoot
 
-		log.Infof("processed tx %s, batchNumber: %d, l2Block: [%d], newStateRoot: %s, oldStateRoot: %s, time: {process: %v, executor: %v}, counters: {used: %s, reserved: %s, needed: %s}",
+		log.Infof("processed tx %s, batchNumber: %d, l2Block: [%d], newStateRoot: %s, oldStateRoot: %s, time: {process: %v, executor: %v}, counters: {used: %s, reserved: %s, needed: %s}, contextId: %s",
 			tx.HashStr, batchRequest.BatchNumber, f.wipL2Block.trackingNum, batchResponse.NewStateRoot.String(), batchRequest.OldStateRoot.String(),
-			time.Since(start), executionTime, f.logZKCounters(batchResponse.UsedZkCounters), f.logZKCounters(batchResponse.ReservedZkCounters), f.logZKCounters(neededZKCounters))
+			time.Since(start), executionTime, f.logZKCounters(batchResponse.UsedZkCounters), f.logZKCounters(batchResponse.ReservedZkCounters), f.logZKCounters(neededZKCounters), contextId)
 
 		return nil, nil
 	} else {

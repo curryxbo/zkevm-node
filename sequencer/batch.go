@@ -458,10 +458,8 @@ func (f *finalizer) batchSanityCheck(ctx context.Context, batchNum uint64, initi
 		return nil, ErrGetBatchByNumber
 	}
 
-	var batchResponse *state.ProcessBatchResponse
-
 	startProcessing := time.Now()
-	batchResponse, err = f.stateIntf.ProcessBatchV2(ctx, batchRequest, false)
+	batchResponse, contextid, err := f.stateIntf.ProcessBatchV2(ctx, batchRequest, false)
 	endProcessing := time.Now()
 
 	if err != nil {
@@ -503,9 +501,9 @@ func (f *finalizer) batchSanityCheck(ctx context.Context, batchNum uint64, initi
 		return nil, ErrUpdateBatchAsChecked
 	}
 
-	log.Infof("successful sanity check for batch %d, initialStateRoot: %s, stateRoot: %s, l2Blocks: %d, time: %v, used counters: %s",
+	log.Infof("successful sanity check for batch %d, initialStateRoot: %s, stateRoot: %s, l2Blocks: %d, time: %v, used counters: %s, contextId: %s",
 		batch.BatchNumber, initialStateRoot, batchResponse.NewStateRoot.String(), len(batchResponse.BlockResponses),
-		endProcessing.Sub(startProcessing), f.logZKCounters(batchResponse.UsedZkCounters))
+		endProcessing.Sub(startProcessing), f.logZKCounters(batchResponse.UsedZkCounters), contextid)
 
 	return batchResponse, nil
 }
