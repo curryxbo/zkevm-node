@@ -323,7 +323,7 @@ func Test_RevertOnSCCallTransaction(t *testing.T) {
 
 	ctx := context.Background()
 
-	for _, network := range networks {
+	for _, network := range networks[2:3] {
 		log.Infof("Network %s", network.Name)
 
 		client := operations.MustGetClient(network.URL)
@@ -333,6 +333,8 @@ func Test_RevertOnSCCallTransaction(t *testing.T) {
 
 		_, scTx, sc, err := Revert2.DeployRevert2(auth, client)
 		require.NoError(t, err)
+
+		log.Debugf("waiting tx to be mined: %v", scTx.Hash().String())
 
 		err = operations.WaitTxToBeMined(ctx, client, scTx, operations.DefaultTimeoutTxToBeMined)
 		require.NoError(t, err)

@@ -55,6 +55,13 @@ var networks = []struct {
 		ChainID:      operations.DefaultL2ChainID,
 		PrivateKey:   operations.DefaultSequencerPrivateKey,
 	},
+	{
+		Name:         "Local Erigon L2",
+		URL:          operations.ErigonL2NetworkURL,
+		WebSocketURL: operations.ErigonL2NetworkWebSocketURL,
+		ChainID:      operations.DefaultL2ChainID,
+		PrivateKey:   operations.DefaultSequencerPrivateKey,
+	},
 }
 
 func setup() {
@@ -74,10 +81,18 @@ func setup() {
 	if err != nil {
 		panic(err)
 	}
+	err = opsMan.StartErigonRPC()
+	if err != nil {
+		panic(err)
+	}
 }
 
 func teardown() {
 	err := operations.Teardown()
+	if err != nil {
+		panic(err)
+	}
+	err = opsMan.StopErigonRPC()
 	if err != nil {
 		panic(err)
 	}
