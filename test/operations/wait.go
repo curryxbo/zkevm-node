@@ -246,7 +246,7 @@ func NodeUpCondition(target string) (bool, error) {
 	}
 	err = json.Unmarshal(body, &r)
 	if err != nil {
-		return false, err
+		return false, nil
 	}
 
 	done := !r.Result
@@ -263,6 +263,10 @@ func networkUpCondition() (bool, error) {
 
 func nodeUpCondition() (done bool, err error) {
 	return NodeUpCondition(DefaultL2NetworkURL)
+}
+
+func erigonRPCUpCondition() (done bool, err error) {
+	return NodeUpCondition(ErigonL2NetworkURL)
 }
 
 func grpcHealthyCondition(address string) (bool, error) {
