@@ -41,6 +41,12 @@ func TestCounter(t *testing.T) {
 	err = opsMan.Setup()
 	require.NoError(t, err)
 
+	var networks = []network{
+		localGethNetwork,
+		localZKEVMNetwork,
+		localErigonNetwork,
+	}
+
 	for _, network := range networks {
 		log.Debugf(network.Name)
 		client := operations.MustGetClient(network.URL)
@@ -291,6 +297,12 @@ func TestEmitLog2(t *testing.T) {
 		},
 	}
 
+	var networks = []network{
+		localGethNetwork,
+		localZKEVMNetwork,
+		localErigonNetwork,
+	}
+
 	for _, network := range networks {
 		log.Debugf(network.Name)
 		client := operations.MustGetClient(network.URL)
@@ -355,6 +367,12 @@ func TestLogTxIndex(t *testing.T) {
 		assert.Equal(t, tx.Hash().String(), log.TxHash.String())
 		assert.Equal(t, receipt.TxHash.String(), log.TxHash.String())
 		assert.Equal(t, receipt.TransactionIndex, log.TxIndex)
+	}
+
+	var networks = []network{
+		localGethNetwork,
+		localZKEVMNetwork,
+		localErigonNetwork,
 	}
 
 	for _, network := range networks {
@@ -502,6 +520,12 @@ func TestFailureTest(t *testing.T) {
 	err = opsMan.Setup()
 	require.NoError(t, err)
 
+	var networks = []network{
+		localGethNetwork,
+		localZKEVMNetwork,
+		localErigonNetwork,
+	}
+
 	for _, network := range networks {
 		log.Debugf(network.Name)
 		client := operations.MustGetClient(network.URL)
@@ -546,6 +570,12 @@ func TestRead(t *testing.T) {
 	require.NoError(t, err)
 	err = opsMan.Setup()
 	require.NoError(t, err)
+
+	var networks = []network{
+		localGethNetwork,
+		localZKEVMNetwork,
+		localErigonNetwork,
+	}
 
 	for _, network := range networks {
 		log.Debugf(network.Name)
@@ -665,6 +695,12 @@ func TestCounterAndBlock(t *testing.T) {
 	require.NoError(t, err)
 	err = opsMan.Setup()
 	require.NoError(t, err)
+
+	var networks = []network{
+		localGethNetwork,
+		localZKEVMNetwork,
+		localErigonNetwork,
+	}
 
 	for _, network := range networks {
 		log.Debugf(network.Name)

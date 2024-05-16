@@ -34,6 +34,13 @@ func TestJSONRPC(t *testing.T) {
 	}
 	setup()
 	defer teardown()
+
+	var networks = []network{
+		localGethNetwork,
+		localZKEVMNetwork,
+		localErigonNetwork,
+	}
+
 	for _, network := range networks {
 		log.Infof("Network %s", network.Name)
 		sc, err := deployContracts(network.URL, operations.DefaultSequencerPrivateKey, network.ChainID)
@@ -73,6 +80,13 @@ func Test_Filters(t *testing.T) {
 	ctx := context.Background()
 	setup()
 	defer teardown()
+
+	var networks = []network{
+		localGethNetwork,
+		localZKEVMNetwork,
+		localErigonNetwork,
+	}
+
 	for _, network := range networks {
 		// test newBlockFilter creation
 		log.Infof("Network %s", network.Name)
@@ -295,6 +309,12 @@ func Test_Gas(t *testing.T) {
 		big.NewInt(1000000000000000),
 	}
 
+	var networks = []network{
+		localGethNetwork,
+		localZKEVMNetwork,
+		localErigonNetwork,
+	}
+
 	for _, network := range networks {
 		log.Infof("Network %s", network.Name)
 
@@ -345,6 +365,12 @@ func Test_Block(t *testing.T) {
 		TransactionIndex string `json:"transactionIndex"`
 		V                string `json:"v"`
 		Value            string `json:"value"`
+	}
+
+	var networks = []network{
+		localGethNetwork,
+		localZKEVMNetwork,
+		localErigonNetwork,
 	}
 
 	for _, network := range networks {
@@ -467,6 +493,13 @@ func Test_Transactions(t *testing.T) {
 	ctx := context.Background()
 	setup()
 	defer teardown()
+
+	var networks = []network{
+		localGethNetwork,
+		localZKEVMNetwork,
+		localErigonNetwork,
+	}
+
 	for _, network := range networks {
 		log.Infof("Network %s", network.Name)
 		ethClient, err := ethclient.Dial(network.URL)

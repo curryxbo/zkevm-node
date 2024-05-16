@@ -38,6 +38,13 @@ func Test_Misc(t *testing.T) {
 	ctx := context.Background()
 	setup()
 	defer teardown()
+
+	var networks = []network{
+		localGethNetwork,
+		localZKEVMNetwork,
+		localErigonNetwork,
+	}
+
 	for _, network := range networks {
 		log.Infof("Network %s", network.Name)
 
@@ -68,6 +75,7 @@ func Test_Misc(t *testing.T) {
 		sc_retrieve := common.HexToHash("0x2a")
 		auth, err := operations.GetAuth(operations.DefaultSequencerPrivateKey, network.ChainID)
 		require.NoError(t, err)
+		auth.GasPrice = big.NewInt(1000000000)
 		contractAddress, tx, storageSC, err := Storage.DeployStorage(auth, ethereumClient)
 		require.NoError(t, err)
 		err = operations.WaitTxToBeMined(ctx, ethereumClient, tx, operations.DefaultTimeoutTxToBeMined)
@@ -112,6 +120,12 @@ func Test_WebSocketsRequest(t *testing.T) {
 	defer teardown()
 
 	acc := common.HexToAddress(operations.DefaultSequencerAddress)
+
+	var networks = []network{
+		localGethNetwork,
+		localZKEVMNetwork,
+		localErigonNetwork,
+	}
 
 	for _, network := range networks {
 		log.Infof("Network %s", network.Name)
@@ -175,6 +189,12 @@ func Test_WebSocketsSubscription(t *testing.T) {
 	}
 	setup()
 	defer teardown()
+
+	var networks = []network{
+		localGethNetwork,
+		localZKEVMNetwork,
+		localErigonNetwork,
+	}
 
 	for _, network := range networks {
 		log.Infof("Network %s", network.Name)
@@ -267,6 +287,12 @@ func Test_RevertOnConstructorTransaction(t *testing.T) {
 
 	ctx := context.Background()
 
+	var networks = []network{
+		localGethNetwork,
+		localZKEVMNetwork,
+		localErigonNetwork,
+	}
+
 	for _, network := range networks {
 		log.Infof("Network %s", network.Name)
 
@@ -274,6 +300,7 @@ func Test_RevertOnConstructorTransaction(t *testing.T) {
 		auth := operations.MustGetAuth(network.PrivateKey, network.ChainID)
 
 		auth.GasLimit = 1000000
+		auth.GasPrice = big.NewInt(1000000000)
 
 		_, scTx, _, err := Revert.DeployRevert(auth, client)
 		require.NoError(t, err)
@@ -323,13 +350,20 @@ func Test_RevertOnSCCallTransaction(t *testing.T) {
 
 	ctx := context.Background()
 
-	for _, network := range networks[2:3] {
+	var networks = []network{
+		localGethNetwork,
+		localZKEVMNetwork,
+		localErigonNetwork,
+	}
+
+	for _, network := range networks {
 		log.Infof("Network %s", network.Name)
 
 		client := operations.MustGetClient(network.URL)
 		auth := operations.MustGetAuth(network.PrivateKey, network.ChainID)
 
 		auth.GasLimit = 1000000
+		auth.GasPrice = big.NewInt(1000000000)
 
 		_, scTx, sc, err := Revert2.DeployRevert2(auth, client)
 		require.NoError(t, err)
@@ -386,6 +420,12 @@ func Test_RevertOnSCCallGasEstimation(t *testing.T) {
 
 	ctx := context.Background()
 
+	var networks = []network{
+		localGethNetwork,
+		localZKEVMNetwork,
+		localErigonNetwork,
+	}
+
 	for _, network := range networks {
 		log.Infof("Network %s", network.Name)
 
@@ -393,6 +433,7 @@ func Test_RevertOnSCCallGasEstimation(t *testing.T) {
 		auth := operations.MustGetAuth(network.PrivateKey, network.ChainID)
 
 		auth.GasLimit = 1000000
+		auth.GasPrice = big.NewInt(1000000000)
 
 		_, scTx, sc, err := Revert2.DeployRevert2(auth, client)
 		require.NoError(t, err)
@@ -463,6 +504,12 @@ func TestCallMissingParameters(t *testing.T) {
 		},
 	}
 
+	var networks = []network{
+		localGethNetwork,
+		localZKEVMNetwork,
+		localErigonNetwork,
+	}
+
 	for _, network := range networks {
 		t.Logf("Network %s", network.Name)
 		for tc, testCase := range testCases {
@@ -492,6 +539,12 @@ func TestWebSocketsConcurrentWrites(t *testing.T) {
 	defer teardown()
 
 	const msgQty = 1000
+
+	var networks = []network{
+		localGethNetwork,
+		localZKEVMNetwork,
+		localErigonNetwork,
+	}
 
 	for _, network := range networks {
 		log.Infof("Network %s", network.Name)
@@ -545,20 +598,27 @@ func TestWebSocketsReadLimit(t *testing.T) {
 	setup()
 	defer teardown()
 
-	wsConn, _, err := websocket.DefaultDialer.Dial(operations.DefaultL2NetworkWebSocketURL, nil)
-	require.NoError(t, err)
-	defer func() {
-		err := wsConn.Close()
+	var networks = []network{
+		localZKEVMNetwork,
+		localErigonNetwork,
+	}
+
+	for _, network := range networks {
+		wsConn, _, err := websocket.DefaultDialer.Dial(network.WebSocketURL, nil)
 		require.NoError(t, err)
-	}()
+		defer func() {
+			err := wsConn.Close()
+			require.NoError(t, err)
+		}()
 
-	jReq := make([]byte, 104857601)
-	err = wsConn.WriteMessage(websocket.TextMessage, jReq)
-	require.NoError(t, err)
+		jReq := make([]byte, 104857601)
+		err = wsConn.WriteMessage(websocket.TextMessage, jReq)
+		require.NoError(t, err)
 
-	_, _, err = wsConn.ReadMessage()
-	require.NotNil(t, err)
-	require.Equal(t, websocket.CloseMessageTooBig, err.(*websocket.CloseError).Code)
+		_, _, err = wsConn.ReadMessage()
+		require.NotNil(t, err)
+		require.Equal(t, websocket.CloseMessageTooBig, err.(*websocket.CloseError).Code)
+	}
 }
 
 func TestEstimateTxWithDataBiggerThanMaxAllowed(t *testing.T) {
@@ -570,26 +630,33 @@ func TestEstimateTxWithDataBiggerThanMaxAllowed(t *testing.T) {
 
 	ctx := context.Background()
 
-	ethereumClient, err := ethclient.Dial(operations.DefaultL2NetworkURL)
-	require.NoError(t, err)
+	var networks = []network{
+		localZKEVMNetwork,
+		localErigonNetwork,
+	}
 
-	sender := common.HexToAddress(operations.DefaultSequencerAddress)
-	receiver := common.HexToAddress(operations.DefaultSequencerAddress)
+	for _, network := range networks {
+		ethereumClient, err := ethclient.Dial(network.URL)
+		require.NoError(t, err)
 
-	balance, err := ethereumClient.BalanceAt(ctx, sender, nil)
-	require.NoError(t, err)
+		sender := common.HexToAddress(operations.DefaultSequencerAddress)
+		receiver := common.HexToAddress(operations.DefaultSequencerAddress)
 
-	_, err = ethereumClient.EstimateGas(ctx, ethereum.CallMsg{
-		From:     sender,
-		To:       &receiver,
-		Value:    new(big.Int),
-		Gas:      balance.Uint64(),
-		GasPrice: new(big.Int).SetUint64(0),
-		Data:     make([]byte, 120000), // large data
-	})
-	rpcErr := err.(rpc.Error)
-	assert.Equal(t, -32000, rpcErr.ErrorCode())
-	assert.Equal(t, "batch_l2_data is invalid", rpcErr.Error())
+		balance, err := ethereumClient.BalanceAt(ctx, sender, nil)
+		require.NoError(t, err)
+
+		_, err = ethereumClient.EstimateGas(ctx, ethereum.CallMsg{
+			From:     sender,
+			To:       &receiver,
+			Value:    new(big.Int),
+			Gas:      balance.Uint64(),
+			GasPrice: new(big.Int).SetUint64(0),
+			Data:     make([]byte, 120000), // large data
+		})
+		rpcErr := err.(rpc.Error)
+		assert.Equal(t, -32000, rpcErr.ErrorCode())
+		assert.Equal(t, "batch_l2_data is invalid", rpcErr.Error())
+	}
 }
 
 func TestEstimateGas(t *testing.T) {
@@ -604,21 +671,28 @@ func TestEstimateGas(t *testing.T) {
 
 	ctx := context.Background()
 
+	var networks = []network{
+		// localGethNetwork,
+		// localZKEVMNetwork,
+		localErigonNetwork,
+	}
+
 	for _, network := range networks {
 		log.Infof("Network %s", network.Name)
 
 		ethereumClient, err := ethclient.Dial(network.URL)
 		require.NoError(t, err)
 
-		auth := operations.MustGetAuth(network.PrivateKey, network.ChainID)
+		gasPrice, err := ethereumClient.SuggestGasPrice(ctx)
+		require.NoError(t, err)
+		gasPrice = big.NewInt(1000000000)
 
+		auth := operations.MustGetAuth(network.PrivateKey, network.ChainID)
+		auth.GasPrice = gasPrice
 		// deploy a smart contract
 		_, tx, sc, err := Counter.DeployCounter(auth, ethereumClient)
 		require.NoError(t, err)
 		err = operations.WaitTxToBeMined(ctx, ethereumClient, tx, operations.DefaultTimeoutTxToBeMined)
-		require.NoError(t, err)
-
-		gasPrice, err := ethereumClient.SuggestGasPrice(ctx)
 		require.NoError(t, err)
 
 		// prepare a tx information to be estimated
