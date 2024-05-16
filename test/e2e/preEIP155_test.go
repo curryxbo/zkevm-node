@@ -38,6 +38,12 @@ func TestPreEIP155Tx(t *testing.T) {
 	err = opsMan.Setup()
 	require.NoError(t, err)
 
+	var networks = []network{
+		localGethNetwork,
+		localZKEVMNetwork,
+		localErigonNetwork,
+	}
+
 	for _, network := range networks {
 		log.Debugf(network.Name)
 		client := operations.MustGetClient(network.URL)
@@ -110,6 +116,12 @@ func TestFakeEIP155With_V_As35(t *testing.T) {
 	require.NoError(t, err)
 	err = opsMan.Setup()
 	require.NoError(t, err)
+
+	var networks = []network{
+		localGethNetwork,
+		localZKEVMNetwork,
+		localErigonNetwork,
+	}
 
 	for _, network := range networks {
 		log.Debugf(network.Name)

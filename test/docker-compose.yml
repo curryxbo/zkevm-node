@@ -148,8 +148,7 @@ services:
 
   zkevm-erigon-rpc:
     container_name: zkevm-erigon-rpc
-    image: hermeznetwork/cdk-erigon
-
+    image: hermeznetwork/cdk-erigon:zkevm-0814c39
     ports:
       - 0.0.0.0:8223:8223
     environment:
