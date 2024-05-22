@@ -10,6 +10,7 @@ import (
 
 	"github.com/0xPolygonHermez/zkevm-node/etherman/smartcontracts/polygonrollupmanager"
 	"github.com/0xPolygonHermez/zkevm-node/etherman/smartcontracts/polygonzkevm"
+	"github.com/0xPolygonHermez/zkevm-node/hex"
 	"github.com/0xPolygonHermez/zkevm-node/test/constants"
 	"github.com/stretchr/testify/require"
 
@@ -127,8 +128,8 @@ func logTx(tx *ethTypes.Transaction) {
 	log.Debugf("GasPrice: %v", tx.GasPrice())
 	log.Debugf("Cost: %v", tx.Cost())
 
-	// b, _ := tx.MarshalBinary()
-	//log.Debugf("RLP: ", hex.EncodeToHex(b))
+	b, _ := tx.MarshalBinary()
+	log.Debugf("RLP: ", hex.EncodeToHex(b))
 	log.Debugf("********************")
 }
 
