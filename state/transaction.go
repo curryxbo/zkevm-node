@@ -1050,8 +1050,9 @@ func (s *State) internalTestGasEstimationTransactionV2(ctx context.Context, batc
 		return false, false, gasUsed, nil, err
 	}
 
+	gasUsed = processBatchResponseV2.BlockResponses[0].GasUsed
+
 	txResponse := processBatchResponseV2.BlockResponses[0].Responses[0]
-	gasUsed = txResponse.GasUsed
 	// Check if an out of gas error happened during EVM execution
 	if txResponse.Error != executor.RomError_ROM_ERROR_NO_ERROR {
 		err := executor.RomErr(txResponse.Error)
