@@ -50,12 +50,11 @@ const (
 	DefaultL1NetworkWebSocketURL               = "ws://localhost:8546"
 	DefaultL1ChainID                    uint64 = 1337
 
-	DefaultL2NetworkURL                        = "http://localhost:8123"
+	// DefaultL2NetworkURL = "http://localhost:8123" // zkEVM-Node RPC
+	DefaultL2NetworkURL                        = "http://localhost:8223" // Erigon RPC
 	PermissionlessL2NetworkURL                 = "http://localhost:8125"
-	ErigonL2NetworkURL                         = "http://localhost:8223"
-	DefaultL2NetworkWebSocketURL               = "ws://localhost:8133"
+	DefaultL2NetworkWebSocketURL               = "ws://localhost:8223"
 	PermissionlessL2NetworkWebSocketURL        = "ws://localhost:8135"
-	ErigonL2NetworkWebSocketURL                = "ws://localhost:8223"
 	DefaultL2ChainID                    uint64 = 1001
 
 	DefaultTimeoutTxToBeMined = 1 * time.Minute
@@ -347,8 +346,11 @@ func GetAuth(privateKeyStr string, chainID uint64) (*bind.TransactOpts, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	return bind.NewKeyedTransactorWithChainID(privateKey, big.NewInt(0).SetUint64(chainID))
+	auth, err := bind.NewKeyedTransactorWithChainID(privateKey, big.NewInt(0).SetUint64(chainID))
+	if err == nil && chainID == DefaultL2ChainID {
+		auth.GasPrice = big.NewInt(1000000000)
+	}
+	return auth, err
 }
 
 // MustGetAuth GetAuth but panics if err
@@ -546,11 +548,6 @@ func (m *Manager) StartNode() error {
 	return StartComponent("node", nodeUpCondition)
 }
 
-// StartErigonRPC starts Erigon RPC
-func (m *Manager) StartErigonRPC() error {
-	return StartComponent("erigon-rpc", erigonRPCUpCondition)
-}
-
 // StartTrustedAndPermissionlessNode starts the node container
 func (m *Manager) StartTrustedAndPermissionlessNode() error {
 	return StartComponent("permissionless", nodeUpCondition)
@@ -563,10 +560,6 @@ func ApprovePol() error {
 
 func stopNode() error {
 	return StopComponent("node")
-}
-
-func (m *Manager) StopErigonRPC() error {
-	return StopComponent("erigon-rpc")
 }
 
 func stopPermissionlessNode() error {

@@ -36,12 +36,6 @@ func TestRepeatedNonce(t *testing.T) {
 	receiverAddr := common.HexToAddress("0x617b3a3528F9cDd6630fd3301B9c8911F7Bf063D")
 	amount := big.NewInt(1000)
 
-	var networks = []network{
-		localGethNetwork,
-		localZKEVMNetwork,
-		localErigonNetwork,
-	}
-
 	for _, network := range networks {
 		log.Debugf(network.Name)
 		client := operations.MustGetClient(network.URL)
@@ -103,12 +97,6 @@ func TestRepeatedTx(t *testing.T) {
 	receiverAddr := common.HexToAddress("0x617b3a3528F9cDd6630fd3301B9c8911F7Bf063D")
 	amount := big.NewInt(1000)
 
-	var networks = []network{
-		localGethNetwork,
-		localZKEVMNetwork,
-		localErigonNetwork,
-	}
-
 	for _, network := range networks {
 		log.Debugf(network.Name)
 		client := operations.MustGetClient(network.URL)
@@ -165,12 +153,6 @@ func TestPendingNonce(t *testing.T) {
 
 	receiverAddr := common.HexToAddress("0x617b3a3528F9cDd6630fd3301B9c8911F7Bf063D")
 	amount := big.NewInt(1000)
-
-	var networks = []network{
-		localGethNetwork,
-		localZKEVMNetwork,
-		localErigonNetwork,
-	}
 
 	for _, network := range networks {
 		log.Debugf(network.Name)

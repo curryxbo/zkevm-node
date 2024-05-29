@@ -50,20 +50,17 @@ var localGethNetwork = network{
 	PrivateKey:   operations.DefaultSequencerPrivateKey,
 }
 
-var localZKEVMNetwork = network{
-	Name:         "Local L2",
+var localErigonNetwork = network{
+	Name:         "Local Erigon L2",
 	URL:          operations.DefaultL2NetworkURL,
 	WebSocketURL: operations.DefaultL2NetworkWebSocketURL,
 	ChainID:      operations.DefaultL2ChainID,
 	PrivateKey:   operations.DefaultSequencerPrivateKey,
 }
 
-var localErigonNetwork = network{
-	Name:         "Local Erigon L2",
-	URL:          operations.ErigonL2NetworkURL,
-	WebSocketURL: operations.ErigonL2NetworkWebSocketURL,
-	ChainID:      operations.DefaultL2ChainID,
-	PrivateKey:   operations.DefaultSequencerPrivateKey,
+var networks = []network{
+	localGethNetwork,
+	localErigonNetwork,
 }
 
 func setup() {
@@ -83,18 +80,10 @@ func setup() {
 	if err != nil {
 		panic(err)
 	}
-	err = opsMan.StartErigonRPC()
-	if err != nil {
-		panic(err)
-	}
 }
 
 func teardown() {
 	err := operations.Teardown()
-	if err != nil {
-		panic(err)
-	}
-	err = opsMan.StopErigonRPC()
 	if err != nil {
 		panic(err)
 	}
