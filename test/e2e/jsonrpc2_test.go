@@ -39,12 +39,6 @@ func Test_Misc(t *testing.T) {
 	setup()
 	defer teardown()
 
-	var networks = []network{
-		localGethNetwork,
-		localZKEVMNetwork,
-		localErigonNetwork,
-	}
-
 	for _, network := range networks {
 		log.Infof("Network %s", network.Name)
 
@@ -121,12 +115,6 @@ func Test_WebSocketsRequest(t *testing.T) {
 
 	acc := common.HexToAddress(operations.DefaultSequencerAddress)
 
-	var networks = []network{
-		localGethNetwork,
-		localZKEVMNetwork,
-		localErigonNetwork,
-	}
-
 	for _, network := range networks {
 		log.Infof("Network %s", network.Name)
 
@@ -189,12 +177,6 @@ func Test_WebSocketsSubscription(t *testing.T) {
 	}
 	setup()
 	defer teardown()
-
-	var networks = []network{
-		localGethNetwork,
-		localZKEVMNetwork,
-		localErigonNetwork,
-	}
 
 	for _, network := range networks {
 		log.Infof("Network %s", network.Name)
@@ -287,12 +269,6 @@ func Test_RevertOnConstructorTransaction(t *testing.T) {
 
 	ctx := context.Background()
 
-	var networks = []network{
-		localGethNetwork,
-		localZKEVMNetwork,
-		localErigonNetwork,
-	}
-
 	for _, network := range networks {
 		log.Infof("Network %s", network.Name)
 
@@ -349,12 +325,6 @@ func Test_RevertOnSCCallTransaction(t *testing.T) {
 	defer teardown()
 
 	ctx := context.Background()
-
-	var networks = []network{
-		localGethNetwork,
-		localZKEVMNetwork,
-		localErigonNetwork,
-	}
 
 	for _, network := range networks {
 		log.Infof("Network %s", network.Name)
@@ -419,12 +389,6 @@ func Test_RevertOnSCCallGasEstimation(t *testing.T) {
 	defer teardown()
 
 	ctx := context.Background()
-
-	var networks = []network{
-		localGethNetwork,
-		localZKEVMNetwork,
-		localErigonNetwork,
-	}
 
 	for _, network := range networks {
 		log.Infof("Network %s", network.Name)
@@ -504,12 +468,6 @@ func TestCallMissingParameters(t *testing.T) {
 		},
 	}
 
-	var networks = []network{
-		localGethNetwork,
-		localZKEVMNetwork,
-		localErigonNetwork,
-	}
-
 	for _, network := range networks {
 		t.Logf("Network %s", network.Name)
 		for tc, testCase := range testCases {
@@ -539,12 +497,6 @@ func TestWebSocketsConcurrentWrites(t *testing.T) {
 	defer teardown()
 
 	const msgQty = 1000
-
-	var networks = []network{
-		localGethNetwork,
-		localZKEVMNetwork,
-		localErigonNetwork,
-	}
 
 	for _, network := range networks {
 		log.Infof("Network %s", network.Name)
@@ -598,27 +550,20 @@ func TestWebSocketsReadLimit(t *testing.T) {
 	setup()
 	defer teardown()
 
-	var networks = []network{
-		localZKEVMNetwork,
-		localErigonNetwork,
-	}
-
-	for _, network := range networks {
-		wsConn, _, err := websocket.DefaultDialer.Dial(network.WebSocketURL, nil)
+	wsConn, _, err := websocket.DefaultDialer.Dial(operations.DefaultL2NetworkWebSocketURL, nil)
+	require.NoError(t, err)
+	defer func() {
+		err := wsConn.Close()
 		require.NoError(t, err)
-		defer func() {
-			err := wsConn.Close()
-			require.NoError(t, err)
-		}()
+	}()
 
-		jReq := make([]byte, 104857601)
-		err = wsConn.WriteMessage(websocket.TextMessage, jReq)
-		require.NoError(t, err)
+	jReq := make([]byte, 104857601)
+	err = wsConn.WriteMessage(websocket.TextMessage, jReq)
+	require.NoError(t, err)
 
-		_, _, err = wsConn.ReadMessage()
-		require.NotNil(t, err)
-		require.Equal(t, websocket.CloseMessageTooBig, err.(*websocket.CloseError).Code)
-	}
+	_, _, err = wsConn.ReadMessage()
+	require.NotNil(t, err)
+	require.Equal(t, websocket.CloseMessageTooBig, err.(*websocket.CloseError).Code)
 }
 
 func TestEstimateTxWithDataBiggerThanMaxAllowed(t *testing.T) {
@@ -630,33 +575,26 @@ func TestEstimateTxWithDataBiggerThanMaxAllowed(t *testing.T) {
 
 	ctx := context.Background()
 
-	var networks = []network{
-		localZKEVMNetwork,
-		localErigonNetwork,
-	}
+	ethereumClient, err := ethclient.Dial(operations.DefaultL2NetworkURL)
+	require.NoError(t, err)
 
-	for _, network := range networks {
-		ethereumClient, err := ethclient.Dial(network.URL)
-		require.NoError(t, err)
+	sender := common.HexToAddress(operations.DefaultSequencerAddress)
+	receiver := common.HexToAddress(operations.DefaultSequencerAddress)
 
-		sender := common.HexToAddress(operations.DefaultSequencerAddress)
-		receiver := common.HexToAddress(operations.DefaultSequencerAddress)
+	balance, err := ethereumClient.BalanceAt(ctx, sender, nil)
+	require.NoError(t, err)
 
-		balance, err := ethereumClient.BalanceAt(ctx, sender, nil)
-		require.NoError(t, err)
-
-		_, err = ethereumClient.EstimateGas(ctx, ethereum.CallMsg{
-			From:     sender,
-			To:       &receiver,
-			Value:    new(big.Int),
-			Gas:      balance.Uint64(),
-			GasPrice: new(big.Int).SetUint64(0),
-			Data:     make([]byte, 120000), // large data
-		})
-		rpcErr := err.(rpc.Error)
-		assert.Equal(t, -32000, rpcErr.ErrorCode())
-		assert.Equal(t, "batch_l2_data is invalid", rpcErr.Error())
-	}
+	_, err = ethereumClient.EstimateGas(ctx, ethereum.CallMsg{
+		From:     sender,
+		To:       &receiver,
+		Value:    new(big.Int),
+		Gas:      balance.Uint64(),
+		GasPrice: new(big.Int).SetUint64(0),
+		Data:     make([]byte, 120000), // large data
+	})
+	rpcErr := err.(rpc.Error)
+	assert.Equal(t, -32000, rpcErr.ErrorCode())
+	assert.Equal(t, "batch_l2_data is invalid", rpcErr.Error())
 }
 
 func TestEstimateGas(t *testing.T) {
@@ -670,12 +608,6 @@ func TestEstimateGas(t *testing.T) {
 	defer teardown()
 
 	ctx := context.Background()
-
-	var networks = []network{
-		// localGethNetwork,
-		// localZKEVMNetwork,
-		localErigonNetwork,
-	}
 
 	for _, network := range networks {
 		log.Infof("Network %s", network.Name)

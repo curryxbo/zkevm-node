@@ -155,9 +155,8 @@ func WaitL2BlockToBeConsolidated(l2Block *big.Int, timeout time.Duration) error 
 
 // WaitL2BlockToBeVirtualized waits until a L2 Block has been virtualized or the given timeout expires.
 func WaitL2BlockToBeVirtualized(l2Block *big.Int, timeout time.Duration) error {
-	l2NetworkURL := "http://localhost:8123"
 	return Poll(DefaultInterval, timeout, func() (bool, error) {
-		return l2BlockVirtualizationCondition(l2Block, l2NetworkURL)
+		return l2BlockVirtualizationCondition(l2Block, DefaultL2NetworkURL)
 	})
 }
 
@@ -265,10 +264,6 @@ func nodeUpCondition() (done bool, err error) {
 	return NodeUpCondition(DefaultL2NetworkURL)
 }
 
-func erigonRPCUpCondition() (done bool, err error) {
-	return NodeUpCondition(ErigonL2NetworkURL)
-}
-
 func grpcHealthyCondition(address string) (bool, error) {
 	opts := []grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -298,8 +293,7 @@ func grpcHealthyCondition(address string) (bool, error) {
 
 // l2BlockConsolidationCondition
 func l2BlockConsolidationCondition(l2Block *big.Int) (bool, error) {
-	l2NetworkURL := "http://localhost:8123"
-	response, err := client.JSONRPCCall(l2NetworkURL, "zkevm_isBlockConsolidated", hex.EncodeBig(l2Block))
+	response, err := client.JSONRPCCall(DefaultL2NetworkURL, "zkevm_isBlockConsolidated", hex.EncodeBig(l2Block))
 	if err != nil {
 		return false, err
 	}
