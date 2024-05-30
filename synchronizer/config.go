@@ -36,7 +36,7 @@ type Config struct {
 
 	// ExecuteBatchNoCountersFlag if is true then the executor will execute the batch with the flag NoCounters set
 	// this a very dangerous option, if you are not sure set to FALSE
-	ExecuteBatchNoCountersFlag bool `mapstructure:"ExecuteBatchWithNoCounters"`
+	ExecuteBatchNoCountersFlag bool `mapstructure:"ExecuteBatchNoCountersFlag"`
 }
 
 // L1BlockCheckConfig Configuration for L1 Block Checker
