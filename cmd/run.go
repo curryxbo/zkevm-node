@@ -49,7 +49,6 @@ const (
 
 func validateUnsecureConfiguration(cfg synchronizer.Config, cliCtx *cli.Context) {
 	if cfg.ExecuteBatchNoCountersFlag {
-		log.Warn("ExecuteBatchNoCountersFlag is enabled. This is a very dangerous option, if you are not sure set to FALSE")
 		if !cliCtx.Bool(config.FlagAllowExecuteBatchNoCounters) {
 			log.Fatal("To enable ExecuteBatchNoCountersFlag set --allow-execute-batch-no-counters-flag, currently the config file is set to true but missing param on invocation")
 		}
@@ -57,6 +56,8 @@ func validateUnsecureConfiguration(cfg synchronizer.Config, cliCtx *cli.Context)
 		if flag != "1" {
 			log.Fatalf("You must define next environment variable: %s=1 to allow to use NoCounters feature", AllowExecuteBatchNoCountersEnvVarName)
 		}
+		log.Warn("ExecuteBatchNoCountersFlag is enabled. This is a very dangerous option, if you are not sure set to FALSE")
+
 	}
 }
 
