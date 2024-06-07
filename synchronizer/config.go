@@ -35,7 +35,8 @@ type Config struct {
 	L2Synchronization l2_sync.Config `mapstructure:"L2Synchronization"`
 
 	// ExecuteBatchNoCountersFlag if is true then the executor will execute the batch with the flag NoCounters set
-	// this a very dangerous option, if you are not sure set to FALSE
+	// this a very dangerous option, if you are not sure set to **FALSE**. To activate need also a execution flag and a environment variable
+	// please check: [issue 3693](https://github.com/0xPolygonHermez/zkevm-node/issues/3693)
 	ExecuteBatchNoCountersFlag bool `mapstructure:"ExecuteBatchNoCountersFlag"`
 }
 
