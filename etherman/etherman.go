@@ -145,7 +145,7 @@ const (
 	ForkIDsOrder EventOrder = "forkIDs"
 	// InitialSequenceBatchesOrder identifies a VerifyBatch event
 	InitialSequenceBatchesOrder EventOrder = "InitialSequenceBatches"
-
+	// MainnetChainID is the chain ID of the Ethereum Mainnet
 	MainnetChainID = 1
 )
 
@@ -289,6 +289,7 @@ func NewClient(cfg Config, l1Config L1Config) (*Client, error) {
 	}, nil
 }
 
+// L1ChainID returns the chain ID of the L1 network
 func (etherMan *Client) L1ChainID(ctx context.Context) (uint64, error) {
 	chainID, err := etherMan.EthClient.ChainID(ctx)
 	if err != nil {

@@ -44,7 +44,7 @@ import (
 )
 
 const (
-	AllowExecuteBatchNoCountersEnvVarName = "ALLOW_EXECUTE_BATCH_NO_COUNTERS"
+	allowExecuteBatchNoCountersEnvVarName = "ALLOW_EXECUTE_BATCH_NO_COUNTERS"
 )
 
 func validateUnsecureConfiguration(cfg synchronizer.Config, cliCtx *cli.Context) {
@@ -52,12 +52,11 @@ func validateUnsecureConfiguration(cfg synchronizer.Config, cliCtx *cli.Context)
 		if !cliCtx.Bool(config.FlagAllowExecuteBatchNoCounters) {
 			log.Fatal("To enable ExecuteBatchNoCountersFlag set --allow-execute-batch-no-counters-flag, currently the config file is set to true but missing param on invocation")
 		}
-		flag := os.Getenv(AllowExecuteBatchNoCountersEnvVarName)
+		flag := os.Getenv(allowExecuteBatchNoCountersEnvVarName)
 		if flag != "1" {
-			log.Fatalf("You must define next environment variable: %s=1 to allow to use NoCounters feature", AllowExecuteBatchNoCountersEnvVarName)
+			log.Fatalf("You must define next environment variable: %s=1 to allow to use NoCounters feature", allowExecuteBatchNoCountersEnvVarName)
 		}
 		log.Warn("ExecuteBatchNoCountersFlag is enabled. This is a very dangerous option, if you are not sure set to FALSE")
-
 	}
 }
 

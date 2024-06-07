@@ -136,7 +136,6 @@ func NewSynchronizer(
 			log.Errorf("Feature ExecuteBatchNoCountersFlag is not allowed in mainnet")
 			return nil, fmt.Errorf("feature ExecuteBatchNoCountersFlag is not allowed in mainnet")
 		}
-
 	}
 	if cfg.L1BlockCheck.Enabled {
 		log.Infof("L1BlockChecker enabled: %s", cfg.L1BlockCheck.String())
