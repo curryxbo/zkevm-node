@@ -16,10 +16,10 @@ contract triggerErrors {
 
     // set gasLimit = 30000000 & steps = 50000
     function outOfCountersPoseidon() public {
-        for (uint256 i = 0; i < 50000; i++) {
-            assembly {
-                sstore(0x00, i)
-            }
+       for (uint256 i = 0; i < 250000; i++) {
+           assembly {
+               sstore(0x00, i)
+           }
         }
     }
 

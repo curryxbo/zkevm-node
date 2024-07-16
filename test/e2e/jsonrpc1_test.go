@@ -686,14 +686,14 @@ func Test_EstimateCounters(t *testing.T) {
 
 	expectedCountersLimits := types.ZKCountersLimits{
 		MaxGasUsed:          types.ArgUint64(hex.DecodeUint64("0x1c9c380")),
-		MaxKeccakHashes:     types.ArgUint64(hex.DecodeUint64("0x861")),
-		MaxPoseidonHashes:   types.ArgUint64(hex.DecodeUint64("0x3d9c5")),
-		MaxPoseidonPaddings: types.ArgUint64(hex.DecodeUint64("0x21017")),
-		MaxMemAligns:        types.ArgUint64(hex.DecodeUint64("0x39c29")),
-		MaxArithmetics:      types.ArgUint64(hex.DecodeUint64("0x39c29")),
-		MaxBinaries:         types.ArgUint64(hex.DecodeUint64("0x73852")),
-		MaxSteps:            types.ArgUint64(hex.DecodeUint64("0x73846a")),
-		MaxSHA256Hashes:     types.ArgUint64(hex.DecodeUint64("0x63c")),
+		MaxKeccakHashes:     types.ArgUint64(hex.DecodeUint64("0x2434")),
+		MaxPoseidonHashes:   types.ArgUint64(hex.DecodeUint64("0x10A485")),
+		MaxPoseidonPaddings: types.ArgUint64(hex.DecodeUint64("0x8EA6C")),
+		MaxMemAligns:        types.ArgUint64(hex.DecodeUint64("0xF9A3D")),
+		MaxArithmetics:      types.ArgUint64(hex.DecodeUint64("0xF9A3D")),
+		MaxBinaries:         types.ArgUint64(hex.DecodeUint64("0x1F347B")),
+		MaxSteps:            types.ArgUint64(hex.DecodeUint64("0x1F346EB")),
+		MaxSHA256Hashes:     types.ArgUint64(hex.DecodeUint64("0x1C65")),
 	}
 
 	type testCase struct {
