@@ -588,10 +588,15 @@ func Test_OOCErrors(t *testing.T) {
 		{
 			name: "call OOC steps",
 			execute: func(t *testing.T, ctx context.Context, sc *triggerErrors.TriggerErrors, c *ethclient.Client, a bind.TransactOpts) string {
-				err := sc.OutOfCountersSteps(nil)
+				a.GasLimit = 30000000
+				a.NoSend = true
+				tx, err := sc.OutOfCountersSteps(&a)
+				require.NoError(t, err)
+
+				err = c.SendTransaction(ctx, tx)
 				return err.Error()
 			},
-			expectedError: "failed to execute the unsigned transaction: main execution exceeded the maximum number of steps",
+			expectedError: "failed to add tx to the pool: not enough step counters to continue the execution",
 		},
 		{
 			name: "call OOC keccaks",
