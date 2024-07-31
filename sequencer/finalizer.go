@@ -404,9 +404,26 @@ func (f *finalizer) finalizeBatches(ctx context.Context) {
 			f.finalizeWIPL2Block(ctx)
 		}
 
-		tx, err := f.workerIntf.GetBestFittingTx(f.wipBatch.imRemainingResources, f.wipBatch.imHighReservedZKCounters)
+		tx, oocTxs, err := f.workerIntf.GetBestFittingTx(f.wipBatch.imRemainingResources, f.wipBatch.imHighReservedZKCounters, (f.wipBatch.countOfL2Blocks == 0 && f.wipL2Block.isEmpty()))
 
-		// If we have txs pending to process but none of them fits into the wip batch, we close the wip batch and open a new one
+		// Set as invalid txs in the worker pool that will never fit into an empty batch
+		for _, oocTx := range oocTxs {
+			log.Infof("tx %s doesn't fits in empty batch %d (node OOC), setting tx as invalid in the pool", oocTx.HashStr, f.wipL2Block.trackingNum, f.wipBatch.batchNumber)
+
+			f.LogEvent(ctx, event.Level_Info, event.EventID_NodeOOC,
+				fmt.Sprintf("tx %s doesn't fits in empty batch %d (node OOC), from: %s, IP: %s", oocTx.HashStr, f.wipBatch.batchNumber, oocTx.FromStr, oocTx.IP), nil)
+
+			// Delete the transaction from the worker
+			f.workerIntf.DeleteTx(oocTx.Hash, oocTx.From)
+
+			errMsg := "node OOC"
+			err = f.poolIntf.UpdateTxStatus(ctx, oocTx.Hash, pool.TxStatusInvalid, false, &errMsg)
+			if err != nil {
+				log.Errorf("failed to update status to invalid in the pool for tx %s, error: %v", oocTx.Hash.String(), err)
+			}
+		}
+
+		// We have txs pending to process but none of them fits into the wip batch we close the wip batch and open a new one
 		if err == ErrNoFittingTransaction {
 			f.finalizeWIPBatch(ctx, state.NoTxFitsClosingReason)
 			continue
