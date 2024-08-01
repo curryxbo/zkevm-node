@@ -64,8 +64,8 @@ func (w *Worker) addTxTracker(ctx context.Context, tx *TxTracker, mutex *sync.Mu
 	}
 
 	// Make sure the transaction's reserved ZKCounters are within the constraints.
-	if !w.batchConstraints.IsWithinConstraints(tx.ReservedZKCounters) {
-		log.Infof("out of counters (node level) when adding tx %s from address %s", tx.Hash, tx.From)
+	if err := w.batchConstraints.CheckNodeLevelOOC(tx.ReservedZKCounters); err != nil {
+		log.Infof("out of counters (node level) when adding tx %s from address %s, error: %v", tx.Hash, tx.From, err)
 		mutexUnlock(mutex)
 		return nil, pool.ErrOutOfCounters
 	}

@@ -707,11 +707,11 @@ func (f *finalizer) handleProcessTransactionResponse(ctx context.Context, tx *Tx
 	} else {
 		log.Infof("current tx %s needed resources exceeds the remaining batch resources, overflow resource: %s, updating metadata for tx in worker and continuing. counters: {batch: %s, used: %s, reserved: %s, needed: %s, high: %s}",
 			tx.HashStr, overflowResource, f.logZKCounters(f.wipBatch.imRemainingResources.ZKCounters), f.logZKCounters(result.UsedZkCounters), f.logZKCounters(result.ReservedZkCounters), f.logZKCounters(neededZKCounters), f.logZKCounters(f.wipBatch.imHighReservedZKCounters))
-		if !f.batchConstraints.IsWithinConstraints(result.ReservedZkCounters) {
-			log.Infof("current tx %s reserved resources exceeds the max limit for batch resources (node OOC), setting tx as invalid in the pool", tx.HashStr)
+		if err := f.batchConstraints.CheckNodeLevelOOC(result.ReservedZkCounters); err != nil {
+			log.Infof("current tx %s reserved resources exceeds the max limit for batch resources (node OOC), setting tx as invalid in the pool, error: %v", tx.HashStr, err)
 
 			f.LogEvent(ctx, event.Level_Info, event.EventID_NodeOOC,
-				fmt.Sprintf("tx %s exceeds node max limit batch resources (node OOC), from: %s, IP: %s", tx.HashStr, tx.FromStr, tx.IP), nil)
+				fmt.Sprintf("tx %s exceeds node max limit batch resources (node OOC), from: %s, IP: %s, error: %v", tx.HashStr, tx.FromStr, tx.IP, err), nil)
 
 			// Delete the transaction from the txSorted list
 			f.workerIntf.DeleteTx(tx.Hash, tx.From)
