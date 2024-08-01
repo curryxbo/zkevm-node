@@ -73,7 +73,7 @@ type BatchConstraintsCfg struct {
 	MaxSHA256Hashes      uint32 `mapstructure:"MaxSHA256Hashes"`
 }
 
-// checkNodeLevelOOC checks if the counters are within the batch constraints
+// CheckNodeLevelOOC checks if the counters are within the batch constraints
 func (c BatchConstraintsCfg) CheckNodeLevelOOC(counters ZKCounters) error {
 	oocList := ""
 
