@@ -588,10 +588,6 @@ func GenerateDataStreamFile(ctx context.Context, streamServer *datastreamer.Stre
 						BlockGasLimit:   l2Block.BlockGasLimit,
 					}
 
-					streamL2BlockEnd := &datastream.L2BlockEnd{
-						Number: l2Block.L2BlockNumber,
-					}
-
 					// Keep the l2 block hash as it is, as the state root can be found in the StateRoot field
 					// So disable this
 					/*
@@ -689,6 +685,10 @@ func GenerateDataStreamFile(ctx context.Context, streamServer *datastreamer.Stre
 					currentGER = l2Block.GlobalExitRoot
 
 					if version >= DSVersion4 {
+						streamL2BlockEnd := &datastream.L2BlockEnd{
+							Number: l2Block.L2BlockNumber,
+						}
+
 						marshalledL2BlockEnd, err := proto.Marshal(streamL2BlockEnd)
 						if err != nil {
 							return err
