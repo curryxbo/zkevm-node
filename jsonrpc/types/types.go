@@ -773,3 +773,24 @@ func NewZKCountersResponse(zkCounters state.ZKCounters, limits ZKCountersLimits,
 		OOCError:       oocErrMsg,
 	}
 }
+
+// ForkIDInterval provides fork id information
+type ForkIDInterval struct {
+	ForkId          ArgUint64 `json:"forkId"`
+	FromBatchNumber ArgUint64 `json:"fromBatchNumber"`
+	ToBatchNumber   ArgUint64 `json:"toBatchNumber"`
+	Version         string    `json:"version"`
+	BlockNumber     ArgUint64 `json:"blockNumber"`
+}
+
+// NewForkIDInterval creates a new instance of ForkIDInterval
+// given a state.ForkIDInterval instance
+func NewForkIDInterval(forkIDInterval state.ForkIDInterval) *ForkIDInterval {
+	return &ForkIDInterval{
+		ForkId:          ArgUint64(forkIDInterval.ForkId),
+		FromBatchNumber: ArgUint64(forkIDInterval.FromBatchNumber),
+		ToBatchNumber:   ArgUint64(forkIDInterval.ToBatchNumber),
+		Version:         forkIDInterval.Version,
+		BlockNumber:     ArgUint64(forkIDInterval.BlockNumber),
+	}
+}

@@ -152,7 +152,7 @@ func (p *PostgresStorage) GetForkIDByBlockNumber(blockNumber uint64) uint64 {
 
 // GetForkIDByBlockNumber returns the fork id for a given block number in memory
 func (p *PostgresStorage) GetForkIDByBlockNumberInMemory(blockNumber uint64) uint64 {
-	for _, index := range sortIndexForForkdIDSortedByBlockNumber(p.cfg.ForkIDIntervals) {
+	for _, index := range sortIndexForForkIDSortedByBlockNumber(p.cfg.ForkIDIntervals) {
 		// reverse travesal
 		interval := p.cfg.ForkIDIntervals[len(p.cfg.ForkIDIntervals)-1-index]
 		if blockNumber >= interval.BlockNumber {
@@ -163,7 +163,7 @@ func (p *PostgresStorage) GetForkIDByBlockNumberInMemory(blockNumber uint64) uin
 	return 1
 }
 
-func sortIndexForForkdIDSortedByBlockNumber(forkIDs []state.ForkIDInterval) []int {
+func sortIndexForForkIDSortedByBlockNumber(forkIDs []state.ForkIDInterval) []int {
 	sortedIndex := make([]int, len(forkIDs))
 	for i := range sortedIndex {
 		sortedIndex[i] = i
@@ -240,6 +240,37 @@ func (p *PostgresStorage) GetForkIDByBatchNumberInMemory(batchNumber uint64) uin
 	return p.cfg.ForkIDIntervals[len(p.cfg.ForkIDIntervals)-1].ForkId
 }
 
+// GetForkByID returns the fork id interval for a given fork id
+func (p *PostgresStorage) GetForkByID(ctx context.Context, forkId uint64, dbTx pgx.Tx) (*state.ForkIDInterval, error) {
+	if p.cfg.AvoidForkIDInMemory {
+		const getForkIDsSQL = "SELECT from_batch_num, to_batch_num, fork_id, version, block_num FROM state.fork_id WHERE fork_id = $1"
+		q := p.getExecQuerier(dbTx)
+
+		forkIDInterval := &state.ForkIDInterval{}
+
+		err := q.QueryRow(ctx, getForkIDsSQL, forkId).Scan(
+			&forkIDInterval.FromBatchNumber,
+			&forkIDInterval.ToBatchNumber,
+			&forkIDInterval.ForkId,
+			&forkIDInterval.Version,
+			&forkIDInterval.BlockNumber,
+		)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, state.ErrNotFound
+		} else if err != nil {
+			return nil, err
+		}
+
+		return forkIDInterval, nil
+	} else {
+		forkIdInterval := p.GetForkIDInMemory(forkId)
+		if p.GetForkIDInMemory(forkId) == nil {
+			return nil, state.ErrNotFound
+		}
+		return forkIdInterval, nil
+	}
+}
+
 // GetForkIDInMemory get the forkIDs stored in cache, or nil if not found
 func (p *PostgresStorage) GetForkIDInMemory(forkId uint64) *state.ForkIDInterval {
 	for _, interval := range p.cfg.ForkIDIntervals {
@@ -248,4 +279,15 @@ func (p *PostgresStorage) GetForkIDInMemory(forkId uint64) *state.ForkIDInterval
 		}
 	}
 	return nil
+}
+
+// GetCurrentForkID gets the current fork id
+func (p *PostgresStorage) GetCurrentForkID(ctx context.Context, dbTx pgx.Tx) (uint64, error) {
+	lastBatchNumber, err := p.GetLastBatchNumber(ctx, dbTx)
+	if err != nil {
+		return 0, err
+	}
+
+	forkID := p.GetForkIDByBatchNumber(lastBatchNumber)
+	return forkID, nil
 }

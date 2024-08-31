@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"slices"
 	"time"
 
 	"github.com/0xPolygonHermez/zkevm-node/hex"
@@ -637,4 +638,70 @@ func (z *ZKEVMEndpoints) GetLatestGlobalExitRoot() (interface{}, types.Error) {
 	}
 
 	return ger.String(), nil
+}
+
+// GetForkId returns the network current fork ID
+func (z *ZKEVMEndpoints) GetForkId() (interface{}, types.Error) {
+	ctx := context.Background()
+	forkID, err := z.state.GetCurrentForkID(ctx, nil)
+	if err != nil {
+		return "0x0", types.NewRPCError(types.DefaultErrorCode, "failed to get the current fork id from state")
+	}
+
+	return hex.EncodeUint64(forkID), nil
+}
+
+// GetForkById returns the network fork ID interval given the fork id
+func (z *ZKEVMEndpoints) GetForkById(forkID types.ArgUint64) (interface{}, types.Error) {
+	ctx := context.Background()
+	forkIDInterval, err := z.state.GetForkByID(ctx, uint64(forkID), nil)
+	if errors.Is(err, state.ErrNotFound) {
+		return nil, nil
+	} else if err != nil {
+		return nil, types.NewRPCError(types.DefaultErrorCode, "failed to get the fork interval by id from state")
+	}
+
+	res := types.NewForkIDInterval(*forkIDInterval)
+	return res, nil
+}
+
+// GetForkIdByBatchNumber returns the fork ID given the provided batch number
+func (z *ZKEVMEndpoints) GetForkIdByBatchNumber(batchNumber types.BatchNumber) (interface{}, types.Error) {
+	ctx := context.Background()
+
+	numericBatchNumber, rpcErr := batchNumber.GetNumericBatchNumber(ctx, z.state, z.etherman, nil)
+	if rpcErr != nil {
+		return nil, rpcErr
+	}
+
+	forkID := z.state.GetForkIDByBatchNumber(numericBatchNumber)
+	return hex.EncodeUint64(forkID), nil
+}
+
+// GetForkIds returns the network fork ID intervals
+func (z *ZKEVMEndpoints) GetForks() (interface{}, types.Error) {
+	ctx := context.Background()
+	forkIDIntervals, err := z.state.GetForkIDIntervals(ctx, nil)
+	if errors.Is(err, state.ErrStateNotSynchronized) {
+		return nil, nil
+	} else if err != nil {
+		return nil, types.NewRPCError(types.DefaultErrorCode, "failed to get the fork id intervals from state")
+	}
+
+	res := make([]*types.ForkIDInterval, 0, len(forkIDIntervals))
+	for _, forkIDInterval := range forkIDIntervals {
+		res = append(res, types.NewForkIDInterval(forkIDInterval))
+	}
+
+	slices.SortFunc(res, func(a *types.ForkIDInterval, b *types.ForkIDInterval) int {
+		if a.ForkId == b.ForkId {
+			return 0
+		} else if a.ForkId > b.ForkId {
+			return 1
+		} else {
+			return -1
+		}
+	})
+
+	return res, nil
 }

@@ -2180,3 +2180,320 @@ func TestGetLatestGlobalExitRoot(t *testing.T) {
 		})
 	}
 }
+
+func TestGetForkId(t *testing.T) {
+	s, m, _ := newSequencerMockedServer(t)
+	defer s.Stop()
+
+	type testCase struct {
+		Name           string
+		ExpectedResult uint64
+		ExpectedError  types.Error
+		SetupMocks     func(m *mocksWrapper)
+	}
+
+	testCases := []testCase{
+		{
+			Name:           "get fork id successfully",
+			ExpectedError:  nil,
+			ExpectedResult: 10,
+			SetupMocks: func(m *mocksWrapper) {
+				m.State.
+					On("GetCurrentForkID", context.Background(), nil).
+					Return(uint64(10), nil).
+					Once()
+			},
+		},
+		{
+			Name:           "failed to get fork id",
+			ExpectedError:  types.NewRPCError(types.DefaultErrorCode, "failed to get the current fork id from state"),
+			ExpectedResult: 0,
+			SetupMocks: func(m *mocksWrapper) {
+				m.State.
+					On("GetCurrentForkID", context.Background(), nil).
+					Return(uint64(0), errors.New("failed to get current fork id")).
+					Once()
+			},
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.Name, func(t *testing.T) {
+			tc := testCase
+			tc.SetupMocks(m)
+
+			res, err := s.JSONRPCCall("zkevm_getForkId")
+			require.NoError(t, err)
+
+			if res.Result != nil {
+				var result types.ArgUint64
+				err = json.Unmarshal(res.Result, &result)
+				require.NoError(t, err)
+				assert.Equal(t, tc.ExpectedResult, uint64(result))
+			}
+
+			if res.Error != nil || tc.ExpectedError != nil {
+				assert.Equal(t, tc.ExpectedError.ErrorCode(), res.Error.Code)
+				assert.Equal(t, tc.ExpectedError.Error(), res.Error.Message)
+			}
+		})
+	}
+}
+
+func TestGetForkById(t *testing.T) {
+	s, m, _ := newSequencerMockedServer(t)
+	defer s.Stop()
+
+	const forkID = uint64(3)
+
+	type testCase struct {
+		Name           string
+		ExpectedResult *types.ForkIDInterval
+		ExpectedError  types.Error
+		SetupMocks     func(m *mocksWrapper)
+	}
+
+	testCases := []testCase{
+		{
+			Name:          "get fork by id successfully",
+			ExpectedError: nil,
+			ExpectedResult: &types.ForkIDInterval{
+				ForkId:          3,
+				FromBatchNumber: 1,
+				ToBatchNumber:   2,
+				Version:         "0.0.1",
+				BlockNumber:     10,
+			},
+			SetupMocks: func(m *mocksWrapper) {
+				m.State.
+					On("GetForkByID", context.Background(), forkID, nil).
+					Return(&state.ForkIDInterval{
+						ForkId:          3,
+						FromBatchNumber: 1,
+						ToBatchNumber:   2,
+						Version:         "0.0.1",
+						BlockNumber:     10,
+					}, nil).
+					Once()
+			},
+		},
+		{
+			Name:           "failed to get fork by id",
+			ExpectedError:  types.NewRPCError(types.DefaultErrorCode, "failed to get the fork interval by id from state"),
+			ExpectedResult: nil,
+			SetupMocks: func(m *mocksWrapper) {
+				m.State.
+					On("GetForkByID", context.Background(), forkID, nil).
+					Return(nil, errors.New("failed to get fork by id")).
+					Once()
+			},
+		},
+		{
+			Name:           "fork by id not found",
+			ExpectedError:  nil,
+			ExpectedResult: nil,
+			SetupMocks: func(m *mocksWrapper) {
+				m.State.
+					On("GetForkByID", context.Background(), forkID, nil).
+					Return(nil, state.ErrNotFound).
+					Once()
+			},
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.Name, func(t *testing.T) {
+			tc := testCase
+			tc.SetupMocks(m)
+
+			res, err := s.JSONRPCCall("zkevm_getForkById", hex.EncodeUint64(forkID))
+			require.NoError(t, err)
+
+			if res.Result != nil || tc.ExpectedResult != nil {
+				var result *types.ForkIDInterval
+				err = json.Unmarshal(res.Result, &result)
+				require.NoError(t, err)
+
+				if tc.ExpectedResult == nil {
+					assert.Nil(t, result)
+				} else {
+					assert.Equal(t, tc.ExpectedResult.ForkId, result.ForkId)
+					assert.Equal(t, tc.ExpectedResult.FromBatchNumber, result.FromBatchNumber)
+					assert.Equal(t, tc.ExpectedResult.ToBatchNumber, result.ToBatchNumber)
+					assert.Equal(t, tc.ExpectedResult.Version, result.Version)
+					assert.Equal(t, tc.ExpectedResult.BlockNumber, result.BlockNumber)
+				}
+			}
+
+			if res.Error != nil || tc.ExpectedError != nil {
+				assert.Equal(t, tc.ExpectedError.ErrorCode(), res.Error.Code)
+				assert.Equal(t, tc.ExpectedError.Error(), res.Error.Message)
+			}
+		})
+	}
+}
+
+func TestGetForkIdByBatchNumber(t *testing.T) {
+	s, m, _ := newSequencerMockedServer(t)
+	defer s.Stop()
+	forkID := uint64(1)
+	batchNumber := uint64(2)
+
+	type testCase struct {
+		Name           string
+		ExpectedResult *uint64
+		ExpectedError  types.Error
+		SetupMocks     func(m *mocksWrapper)
+	}
+
+	testCases := []testCase{
+		{
+			Name:           "get fork id by batch number successfully",
+			ExpectedResult: &forkID,
+			SetupMocks: func(m *mocksWrapper) {
+				m.State.
+					On("GetForkIDByBatchNumber", batchNumber).
+					Return(forkID, nil).
+					Once()
+			},
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.Name, func(t *testing.T) {
+			tc := testCase
+			tc.SetupMocks(m)
+
+			res, err := s.JSONRPCCall("zkevm_getForkIdByBatchNumber", hex.EncodeUint64(batchNumber))
+			require.NoError(t, err)
+
+			if tc.ExpectedResult != nil {
+				var result types.ArgUint64
+				err = json.Unmarshal(res.Result, &result)
+				require.NoError(t, err)
+				assert.Equal(t, *tc.ExpectedResult, uint64(result))
+			} else {
+				if res.Result == nil {
+					assert.Nil(t, res.Result)
+				} else {
+					var result *uint64
+					err = json.Unmarshal(res.Result, &result)
+					require.NoError(t, err)
+					assert.Nil(t, result)
+				}
+			}
+
+			if tc.ExpectedError != nil {
+				assert.Equal(t, tc.ExpectedError.ErrorCode(), res.Error.Code)
+				assert.Equal(t, tc.ExpectedError.Error(), res.Error.Message)
+			} else {
+				assert.Nil(t, res.Error)
+			}
+		})
+	}
+}
+
+func TestGetForks(t *testing.T) {
+	s, m, _ := newSequencerMockedServer(t)
+	defer s.Stop()
+
+	type testCase struct {
+		Name           string
+		ExpectedResult []types.ForkIDInterval
+		ExpectedError  types.Error
+		SetupMocks     func(m *mocksWrapper)
+	}
+
+	testCases := []testCase{
+		{
+			Name:          "get forks successfully",
+			ExpectedError: nil,
+			ExpectedResult: []types.ForkIDInterval{
+				{
+					ForkId:          1,
+					FromBatchNumber: 1,
+					ToBatchNumber:   2,
+					Version:         "0.0.1",
+					BlockNumber:     5,
+				},
+				{
+					ForkId:          2,
+					FromBatchNumber: 3,
+					ToBatchNumber:   4,
+					Version:         "0.0.2",
+					BlockNumber:     10,
+				},
+			},
+			SetupMocks: func(m *mocksWrapper) {
+				m.State.
+					On("GetForkIDIntervals", context.Background(), nil).
+					Return([]state.ForkIDInterval{
+						{
+							ForkId:          1,
+							FromBatchNumber: 1,
+							ToBatchNumber:   2,
+							Version:         "0.0.1",
+							BlockNumber:     5,
+						},
+						{
+							ForkId:          2,
+							FromBatchNumber: 3,
+							ToBatchNumber:   4,
+							Version:         "0.0.2",
+							BlockNumber:     10,
+						},
+					}, nil).
+					Once()
+			},
+		},
+		{
+			Name:           "failed to get forks",
+			ExpectedError:  types.NewRPCError(types.DefaultErrorCode, "failed to get the fork id intervals from state"),
+			ExpectedResult: nil,
+			SetupMocks: func(m *mocksWrapper) {
+				m.State.
+					On("GetForkIDIntervals", context.Background(), nil).
+					Return(nil, errors.New("failed to get fork id intervals")).
+					Once()
+			},
+		},
+		{
+			Name:           "forks when state is not synchronized yet",
+			ExpectedError:  nil,
+			ExpectedResult: nil,
+			SetupMocks: func(m *mocksWrapper) {
+				m.State.
+					On("GetForkIDIntervals", context.Background(), nil).
+					Return(nil, state.ErrStateNotSynchronized).
+					Once()
+			},
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.Name, func(t *testing.T) {
+			tc := testCase
+			tc.SetupMocks(m)
+
+			res, err := s.JSONRPCCall("zkevm_getForks")
+			require.NoError(t, err)
+
+			if res.Result != nil || tc.ExpectedResult != nil {
+				var result []types.ForkIDInterval
+				err = json.Unmarshal(res.Result, &result)
+				require.NoError(t, err)
+
+				if tc.ExpectedResult == nil {
+					assert.Nil(t, result)
+				} else {
+					assert.ElementsMatch(t, tc.ExpectedResult, result)
+				}
+			}
+
+			if res.Error != nil || tc.ExpectedError != nil {
+				assert.Equal(t, tc.ExpectedError.ErrorCode(), res.Error.Code)
+				assert.Equal(t, tc.ExpectedError.Error(), res.Error.Message)
+			}
+		})
+	}
+}

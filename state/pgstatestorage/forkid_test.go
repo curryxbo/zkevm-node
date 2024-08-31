@@ -17,7 +17,7 @@ func TestSortIndexForForkdIDSortedByBlockNumber(t *testing.T) {
 	}
 
 	expected := []int{3, 1, 0, 2}
-	actual := sortIndexForForkdIDSortedByBlockNumber(forkIDs)
+	actual := sortIndexForForkIDSortedByBlockNumber(forkIDs)
 
 	assert.Equal(t, expected, actual)
 

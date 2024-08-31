@@ -271,6 +271,34 @@ func (_m *StateMock) GetCode(ctx context.Context, address common.Address, root c
 	return r0, r1
 }
 
+// GetCurrentForkID provides a mock function with given fields: ctx, dbTx
+func (_m *StateMock) GetCurrentForkID(ctx context.Context, dbTx pgx.Tx) (uint64, error) {
+	ret := _m.Called(ctx, dbTx)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetCurrentForkID")
+	}
+
+	var r0 uint64
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, pgx.Tx) (uint64, error)); ok {
+		return rf(ctx, dbTx)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, pgx.Tx) uint64); ok {
+		r0 = rf(ctx, dbTx)
+	} else {
+		r0 = ret.Get(0).(uint64)
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, pgx.Tx) error); ok {
+		r1 = rf(ctx, dbTx)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
 // GetExitRootByGlobalExitRoot provides a mock function with given fields: ctx, ger, dbTx
 func (_m *StateMock) GetExitRootByGlobalExitRoot(ctx context.Context, ger common.Hash, dbTx pgx.Tx) (*state.GlobalExitRoot, error) {
 	ret := _m.Called(ctx, ger, dbTx)
@@ -294,6 +322,84 @@ func (_m *StateMock) GetExitRootByGlobalExitRoot(ctx context.Context, ger common
 
 	if rf, ok := ret.Get(1).(func(context.Context, common.Hash, pgx.Tx) error); ok {
 		r1 = rf(ctx, ger, dbTx)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// GetForkByID provides a mock function with given fields: ctx, forkID, dbTx
+func (_m *StateMock) GetForkByID(ctx context.Context, forkID uint64, dbTx pgx.Tx) (*state.ForkIDInterval, error) {
+	ret := _m.Called(ctx, forkID, dbTx)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetForkByID")
+	}
+
+	var r0 *state.ForkIDInterval
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, uint64, pgx.Tx) (*state.ForkIDInterval, error)); ok {
+		return rf(ctx, forkID, dbTx)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, uint64, pgx.Tx) *state.ForkIDInterval); ok {
+		r0 = rf(ctx, forkID, dbTx)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*state.ForkIDInterval)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, uint64, pgx.Tx) error); ok {
+		r1 = rf(ctx, forkID, dbTx)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// GetForkIDByBatchNumber provides a mock function with given fields: batchNumber
+func (_m *StateMock) GetForkIDByBatchNumber(batchNumber uint64) uint64 {
+	ret := _m.Called(batchNumber)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetForkIDByBatchNumber")
+	}
+
+	var r0 uint64
+	if rf, ok := ret.Get(0).(func(uint64) uint64); ok {
+		r0 = rf(batchNumber)
+	} else {
+		r0 = ret.Get(0).(uint64)
+	}
+
+	return r0
+}
+
+// GetForkIDIntervals provides a mock function with given fields: ctx, dbTx
+func (_m *StateMock) GetForkIDIntervals(ctx context.Context, dbTx pgx.Tx) ([]state.ForkIDInterval, error) {
+	ret := _m.Called(ctx, dbTx)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetForkIDIntervals")
+	}
+
+	var r0 []state.ForkIDInterval
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, pgx.Tx) ([]state.ForkIDInterval, error)); ok {
+		return rf(ctx, dbTx)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, pgx.Tx) []state.ForkIDInterval); ok {
+		r0 = rf(ctx, dbTx)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]state.ForkIDInterval)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, pgx.Tx) error); ok {
+		r1 = rf(ctx, dbTx)
 	} else {
 		r1 = ret.Error(1)
 	}

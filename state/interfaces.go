@@ -123,6 +123,8 @@ type storage interface {
 	GetLatestGer(ctx context.Context, maxBlockNumber uint64) (GlobalExitRoot, time.Time, error)
 	GetBatchByForcedBatchNum(ctx context.Context, forcedBatchNumber uint64, dbTx pgx.Tx) (*Batch, error)
 	AddForkID(ctx context.Context, forkID ForkIDInterval, dbTx pgx.Tx) error
+	GetCurrentForkID(ctx context.Context, dbTx pgx.Tx) (uint64, error)
+	GetForkByID(ctx context.Context, forkID uint64, dbTx pgx.Tx) (*ForkIDInterval, error)
 	GetForkIDs(ctx context.Context, dbTx pgx.Tx) ([]ForkIDInterval, error)
 	UpdateForkIDToBatchNumber(ctx context.Context, forkID ForkIDInterval, dbTx pgx.Tx) error
 	UpdateForkIDBlockNumber(ctx context.Context, forkdID uint64, newBlockNumber uint64, updateMemCache bool, dbTx pgx.Tx) error
