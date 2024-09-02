@@ -640,7 +640,7 @@ func (z *ZKEVMEndpoints) GetLatestGlobalExitRoot() (interface{}, types.Error) {
 	return ger.String(), nil
 }
 
-// GetForkId returns the network current fork ID
+// GetForkId returns the network's current fork ID
 func (z *ZKEVMEndpoints) GetForkId() (interface{}, types.Error) {
 	ctx := context.Background()
 	forkID, err := z.state.GetCurrentForkID(ctx, nil)
@@ -651,7 +651,7 @@ func (z *ZKEVMEndpoints) GetForkId() (interface{}, types.Error) {
 	return hex.EncodeUint64(forkID), nil
 }
 
-// GetForkById returns the network fork ID interval given the fork id
+// GetForkById returns the network fork ID interval given the provided fork id
 func (z *ZKEVMEndpoints) GetForkById(forkID types.ArgUint64) (interface{}, types.Error) {
 	ctx := context.Background()
 	forkIDInterval, err := z.state.GetForkByID(ctx, uint64(forkID), nil)
@@ -678,7 +678,7 @@ func (z *ZKEVMEndpoints) GetForkIdByBatchNumber(batchNumber types.BatchNumber) (
 	return hex.EncodeUint64(forkID), nil
 }
 
-// GetForkIds returns the network fork ID intervals
+// GetForks returns the network fork ID intervals
 func (z *ZKEVMEndpoints) GetForks() (interface{}, types.Error) {
 	ctx := context.Background()
 	forkIDIntervals, err := z.state.GetForkIDIntervals(ctx, nil)
