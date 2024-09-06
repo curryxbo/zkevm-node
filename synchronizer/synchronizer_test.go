@@ -2,6 +2,7 @@ package synchronizer
 
 import (
 	context "context"
+	"fmt"
 	"math"
 	"math/big"
 	"testing"
@@ -43,6 +44,40 @@ type mocks struct {
 	ZKEVMClient                   *mock_syncinterfaces.ZKEVMClientInterface
 	zkEVMClientEthereumCompatible *mock_syncinterfaces.ZKEVMClientEthereumCompatibleInterface
 	//EventLog     *eventLogMock
+}
+
+func TestGetStartingL1BlockAutodiscover(t *testing.T) {
+	genesis, cfg, m := setupGenericTest(t)
+	ethermanForL1 := []syncinterfaces.EthermanFullInterface{m.Etherman}
+	syncInterface, err := NewSynchronizer(false, m.Etherman, ethermanForL1, m.State, m.Pool, m.EthTxManager, m.ZKEVMClient, m.zkEVMClientEthereumCompatible, nil, *genesis, *cfg, false)
+	require.NoError(t, err)
+	sync, ok := syncInterface.(*ClientSynchronizer)
+	require.True(t, ok)
+	ctx := context.TODO()
+	t.Run("getStartingL1Block autodiscover OK", func(t *testing.T) {
+		m.State.EXPECT().GetLastBlock(ctx, nil).Return(nil, state.ErrStateNotSynchronized).Once()
+		m.Etherman.EXPECT().GetL1BlockUpgradeLxLy(mock.Anything, mock.Anything).Return(uint64(100), nil).Once()
+		needProcess, firstBlock, err := sync.getStartingL1Block(ctx, 123, 0, nil)
+		require.NoError(t, err)
+		require.True(t, needProcess)
+		require.Equal(t, uint64(100), firstBlock)
+	})
+
+	t.Run("getStartingL1Block autodiscover Fails", func(t *testing.T) {
+		m.State.EXPECT().GetLastBlock(ctx, nil).Return(nil, state.ErrStateNotSynchronized).Once()
+		m.Etherman.EXPECT().GetL1BlockUpgradeLxLy(mock.Anything, mock.Anything).Return(uint64(0), fmt.Errorf("error")).Once()
+		_, _, err = sync.getStartingL1Block(ctx, 123, 0, nil)
+		require.Error(t, err)
+	})
+
+	t.Run("getStartingL1Block have already started sync", func(t *testing.T) {
+		m.State.EXPECT().GetLastBlock(ctx, nil).Return(&state.Block{BlockNumber: 100}, nil).Once()
+
+		needProcess, firstBlock, err := sync.getStartingL1Block(ctx, 123, 0, nil)
+		require.NoError(t, err)
+		require.True(t, needProcess)
+		require.Equal(t, uint64(101), firstBlock)
+	})
 }
 
 // Feature #2220 and  #2239: Optimize Trusted state synchronization
@@ -123,7 +158,7 @@ func TestGivenPermissionlessNodeWhenSyncronizeFirstTimeABatchThenStoreItInALocal
 // but it used a feature that is not implemented in new one that is asking beyond the last block on L1
 func TestForcedBatchEtrog(t *testing.T) {
 	genesis := state.Genesis{
-		BlockNumber: uint64(123456),
+		BlockNumber: uint64(0),
 	}
 	cfg := Config{
 		SyncInterval:          cfgTypes.Duration{Duration: 1 * time.Second},
@@ -156,15 +191,22 @@ func TestForcedBatchEtrog(t *testing.T) {
 		ToBatchNumber:   ^uint64(0),
 	}
 	m.State.EXPECT().GetForkIDInMemory(uint64(7)).Return(&forkIdInterval)
+	parentHash := common.HexToHash("0x111")
+	ethHeader := &ethTypes.Header{Number: big.NewInt(1), ParentHash: parentHash}
+	ethBlock := ethTypes.NewBlockWithHeader(ethHeader)
+	lastBlock := &state.Block{BlockHash: ethBlock.Hash(), BlockNumber: ethBlock.Number().Uint64(), ParentHash: ethBlock.ParentHash()}
+	m.State.
+		On("GetLastBlock", mock.Anything, nil).
+		Return(lastBlock, nil).
+		Once()
 
 	m.State.
 		On("BeginStateTransaction", ctxMatchBy).
 		Run(func(args mock.Arguments) {
 			ctx := args[0].(context.Context)
-			parentHash := common.HexToHash("0x111")
-			ethHeader0 := &ethTypes.Header{Number: big.NewInt(0), ParentHash: parentHash}
+			ethHeader0 := &ethTypes.Header{Number: big.NewInt(1), ParentHash: parentHash}
 			ethBlock0 := ethTypes.NewBlockWithHeader(ethHeader0)
-			ethHeader1 := &ethTypes.Header{Number: big.NewInt(1), ParentHash: ethBlock0.Hash()}
+			ethHeader1 := &ethTypes.Header{Number: big.NewInt(2), ParentHash: ethBlock0.Hash()}
 			ethBlock1 := ethTypes.NewBlockWithHeader(ethHeader1)
 			lastBlock0 := &state.Block{BlockHash: ethBlock0.Hash(), BlockNumber: ethBlock0.Number().Uint64(), ParentHash: ethBlock0.ParentHash()}
 			lastBlock1 := &state.Block{BlockHash: ethBlock1.Hash(), BlockNumber: ethBlock1.Number().Uint64(), ParentHash: ethBlock1.ParentHash()}
@@ -173,10 +215,6 @@ func TestForcedBatchEtrog(t *testing.T) {
 				On("GetForkIDByBatchNumber", mock.Anything).
 				Return(uint64(7), nil).
 				Maybe()
-			m.State.
-				On("GetLastBlock", ctx, m.DbTx).
-				Return(lastBlock0, nil).
-				Once()
 
 			m.State.
 				On("GetLastBatchNumber", ctx, m.DbTx).
@@ -246,13 +284,15 @@ func TestForcedBatchEtrog(t *testing.T) {
 			}}
 
 			ethermanBlock0 := etherman.Block{
-				BlockNumber: 0,
+				BlockNumber: ethBlock0.NumberU64(),
 				ReceivedAt:  t,
+				ParentHash:  ethBlock0.ParentHash(),
 				BlockHash:   ethBlock0.Hash(),
 			}
 			ethermanBlock1 := etherman.Block{
-				BlockNumber:      1,
+				BlockNumber:      ethBlock0.NumberU64(),
 				ReceivedAt:       t,
+				ParentHash:       ethBlock1.ParentHash(),
 				BlockHash:        ethBlock1.Hash(),
 				SequencedBatches: [][]etherman.SequencedBatch{{sequencedBatch}},
 				ForcedBatches:    forceb,
@@ -401,7 +441,7 @@ func TestForcedBatchEtrog(t *testing.T) {
 // but it used a feature that is not implemented in new one that is asking beyond the last block on L1
 func TestSequenceForcedBatchIncaberry(t *testing.T) {
 	genesis := state.Genesis{
-		BlockNumber: uint64(123456),
+		BlockNumber: uint64(0),
 	}
 	cfg := Config{
 		SyncInterval:          cfgTypes.Duration{Duration: 1 * time.Second},
@@ -423,26 +463,27 @@ func TestSequenceForcedBatchIncaberry(t *testing.T) {
 
 	// state preparation
 	ctxMatchBy := mock.MatchedBy(func(ctx context.Context) bool { return ctx != nil })
+	parentHash := common.HexToHash("0x111")
+	ethHeader0 := &ethTypes.Header{Number: big.NewInt(1), ParentHash: parentHash}
+	ethBlock0 := ethTypes.NewBlockWithHeader(ethHeader0)
+	ethHeader1 := &ethTypes.Header{Number: big.NewInt(2), ParentHash: ethBlock0.Hash()}
+	ethBlock1 := ethTypes.NewBlockWithHeader(ethHeader1)
+	lastBlock0 := &state.Block{BlockHash: ethBlock0.Hash(), BlockNumber: ethBlock0.Number().Uint64(), ParentHash: ethBlock0.ParentHash()}
+	lastBlock1 := &state.Block{BlockHash: ethBlock1.Hash(), BlockNumber: ethBlock1.Number().Uint64(), ParentHash: ethBlock1.ParentHash()}
+
+	m.State.
+		On("GetLastBlock", mock.Anything, nil).
+		Return(lastBlock0, nil).
+		Once()
+
 	m.State.
 		On("BeginStateTransaction", ctxMatchBy).
 		Run(func(args mock.Arguments) {
 			ctx := args[0].(context.Context)
-			parentHash := common.HexToHash("0x111")
-			ethHeader0 := &ethTypes.Header{Number: big.NewInt(0), ParentHash: parentHash}
-			ethBlock0 := ethTypes.NewBlockWithHeader(ethHeader0)
-			ethHeader1 := &ethTypes.Header{Number: big.NewInt(1), ParentHash: ethBlock0.Hash()}
-			ethBlock1 := ethTypes.NewBlockWithHeader(ethHeader1)
-			lastBlock0 := &state.Block{BlockHash: ethBlock0.Hash(), BlockNumber: ethBlock0.Number().Uint64(), ParentHash: ethBlock0.ParentHash()}
-			lastBlock1 := &state.Block{BlockHash: ethBlock1.Hash(), BlockNumber: ethBlock1.Number().Uint64(), ParentHash: ethBlock1.ParentHash()}
 			m.State.
 				On("GetForkIDByBatchNumber", mock.Anything).
 				Return(uint64(1), nil).
 				Maybe()
-
-			m.State.
-				On("GetLastBlock", ctx, m.DbTx).
-				Return(lastBlock0, nil).
-				Once()
 
 			m.State.
 				On("GetLastBatchNumber", ctx, m.DbTx).
@@ -517,7 +558,7 @@ func TestSequenceForcedBatchIncaberry(t *testing.T) {
 				ParentHash:  ethBlock0.ParentHash(),
 			}
 			ethermanBlock1 := etherman.Block{
-				BlockNumber:           ethBlock1.NumberU64(),
+				BlockNumber:           ethBlock0.NumberU64(),
 				BlockHash:             ethBlock1.Hash(),
 				ParentHash:            ethBlock1.ParentHash(),
 				SequencedForceBatches: [][]etherman.SequencedForceBatch{{sequencedForceBatch}},
@@ -965,38 +1006,39 @@ func TestReorg(t *testing.T) {
 		ToBatchNumber:   math.MaxUint64,
 	}
 	m.State.EXPECT().GetForkIDInMemory(uint64(9)).Return(&forkIdInterval)
+	parentHash := common.HexToHash("0x111")
+	ethHeader0 := &ethTypes.Header{Number: big.NewInt(0), ParentHash: parentHash}
+	ethBlock0 := ethTypes.NewBlockWithHeader(ethHeader0)
+	ethHeader1bis := &ethTypes.Header{Number: big.NewInt(1), ParentHash: ethBlock0.Hash(), Time: 10, GasUsed: 20, Root: common.HexToHash("0x234")}
+	ethBlock1bis := ethTypes.NewBlockWithHeader(ethHeader1bis)
+	ethHeader2bis := &ethTypes.Header{Number: big.NewInt(2), ParentHash: ethBlock1bis.Hash()}
+	ethBlock2bis := ethTypes.NewBlockWithHeader(ethHeader2bis)
+	ethHeader3bis := &ethTypes.Header{Number: big.NewInt(3), ParentHash: ethBlock2bis.Hash()}
+	ethBlock3bis := ethTypes.NewBlockWithHeader(ethHeader3bis)
+	ethHeader1 := &ethTypes.Header{Number: big.NewInt(1), ParentHash: ethBlock0.Hash()}
+	ethBlock1 := ethTypes.NewBlockWithHeader(ethHeader1)
+	ethHeader2 := &ethTypes.Header{Number: big.NewInt(2), ParentHash: ethBlock1.Hash()}
+	ethBlock2 := ethTypes.NewBlockWithHeader(ethHeader2)
+	ethHeader3 := &ethTypes.Header{Number: big.NewInt(3), ParentHash: ethBlock2.Hash()}
+	ethBlock3 := ethTypes.NewBlockWithHeader(ethHeader3)
+
+	lastBlock0 := &state.Block{BlockHash: ethBlock0.Hash(), BlockNumber: ethBlock0.Number().Uint64(), ParentHash: ethBlock0.ParentHash()}
+	lastBlock1 := &state.Block{BlockHash: ethBlock1.Hash(), BlockNumber: ethBlock1.Number().Uint64(), ParentHash: ethBlock1.ParentHash()}
+
+	m.State.
+		On("GetLastBlock", mock.Anything, nil).
+		Return(lastBlock1, nil).
+		Once()
 
 	m.State.
 		On("BeginStateTransaction", ctxMatchBy).
 		Run(func(args mock.Arguments) {
 			ctx := args[0].(context.Context)
-			parentHash := common.HexToHash("0x111")
-			ethHeader0 := &ethTypes.Header{Number: big.NewInt(0), ParentHash: parentHash}
-			ethBlock0 := ethTypes.NewBlockWithHeader(ethHeader0)
-			ethHeader1bis := &ethTypes.Header{Number: big.NewInt(1), ParentHash: ethBlock0.Hash(), Time: 10, GasUsed: 20, Root: common.HexToHash("0x234")}
-			ethBlock1bis := ethTypes.NewBlockWithHeader(ethHeader1bis)
-			ethHeader2bis := &ethTypes.Header{Number: big.NewInt(2), ParentHash: ethBlock1bis.Hash()}
-			ethBlock2bis := ethTypes.NewBlockWithHeader(ethHeader2bis)
-			ethHeader3bis := &ethTypes.Header{Number: big.NewInt(3), ParentHash: ethBlock2bis.Hash()}
-			ethBlock3bis := ethTypes.NewBlockWithHeader(ethHeader3bis)
-			ethHeader1 := &ethTypes.Header{Number: big.NewInt(1), ParentHash: ethBlock0.Hash()}
-			ethBlock1 := ethTypes.NewBlockWithHeader(ethHeader1)
-			ethHeader2 := &ethTypes.Header{Number: big.NewInt(2), ParentHash: ethBlock1.Hash()}
-			ethBlock2 := ethTypes.NewBlockWithHeader(ethHeader2)
-			ethHeader3 := &ethTypes.Header{Number: big.NewInt(3), ParentHash: ethBlock2.Hash()}
-			ethBlock3 := ethTypes.NewBlockWithHeader(ethHeader3)
-
-			lastBlock0 := &state.Block{BlockHash: ethBlock0.Hash(), BlockNumber: ethBlock0.Number().Uint64(), ParentHash: ethBlock0.ParentHash()}
-			lastBlock1 := &state.Block{BlockHash: ethBlock1.Hash(), BlockNumber: ethBlock1.Number().Uint64(), ParentHash: ethBlock1.ParentHash()}
 
 			m.State.
 				On("GetForkIDByBatchNumber", mock.Anything).
 				Return(uint64(9), nil).
 				Maybe()
-			m.State.
-				On("GetLastBlock", ctx, m.DbTx).
-				Return(lastBlock1, nil).
-				Once()
 
 			m.State.
 				On("GetLastBatchNumber", ctx, m.DbTx).
@@ -1288,33 +1330,31 @@ func TestLatestSyncedBlockEmpty(t *testing.T) {
 		ToBatchNumber:   math.MaxUint64,
 	}
 	m.State.EXPECT().GetForkIDInMemory(uint64(9)).Return(&forkIdInterval)
+	parentHash := common.HexToHash("0x111")
+	ethHeader0 := &ethTypes.Header{Number: big.NewInt(0), ParentHash: parentHash}
+	ethBlock0 := ethTypes.NewBlockWithHeader(ethHeader0)
+	ethHeader1 := &ethTypes.Header{Number: big.NewInt(1), ParentHash: ethBlock0.Hash()}
+	ethBlock1 := ethTypes.NewBlockWithHeader(ethHeader1)
+	ethHeader2 := &ethTypes.Header{Number: big.NewInt(2), ParentHash: ethBlock1.Hash()}
+	ethBlock2 := ethTypes.NewBlockWithHeader(ethHeader2)
+	ethHeader3 := &ethTypes.Header{Number: big.NewInt(3), ParentHash: ethBlock2.Hash()}
+	ethBlock3 := ethTypes.NewBlockWithHeader(ethHeader3)
+
+	lastBlock0 := &state.Block{BlockHash: ethBlock0.Hash(), BlockNumber: ethBlock0.Number().Uint64(), ParentHash: ethBlock0.ParentHash()}
+	lastBlock1 := &state.Block{BlockHash: ethBlock1.Hash(), BlockNumber: ethBlock1.Number().Uint64(), ParentHash: ethBlock1.ParentHash()}
+	m.State.
+		On("GetLastBlock", mock.Anything, nil).
+		Return(lastBlock1, nil).
+		Once()
 
 	m.State.
 		On("BeginStateTransaction", ctxMatchBy).
 		Run(func(args mock.Arguments) {
 			ctx := args[0].(context.Context)
-			parentHash := common.HexToHash("0x111")
-			ethHeader0 := &ethTypes.Header{Number: big.NewInt(0), ParentHash: parentHash}
-			ethBlock0 := ethTypes.NewBlockWithHeader(ethHeader0)
-			ethHeader1 := &ethTypes.Header{Number: big.NewInt(1), ParentHash: ethBlock0.Hash()}
-			ethBlock1 := ethTypes.NewBlockWithHeader(ethHeader1)
-			ethHeader2 := &ethTypes.Header{Number: big.NewInt(2), ParentHash: ethBlock1.Hash()}
-			ethBlock2 := ethTypes.NewBlockWithHeader(ethHeader2)
-			ethHeader3 := &ethTypes.Header{Number: big.NewInt(3), ParentHash: ethBlock2.Hash()}
-			ethBlock3 := ethTypes.NewBlockWithHeader(ethHeader3)
-
-			lastBlock0 := &state.Block{BlockHash: ethBlock0.Hash(), BlockNumber: ethBlock0.Number().Uint64(), ParentHash: ethBlock0.ParentHash()}
-			lastBlock1 := &state.Block{BlockHash: ethBlock1.Hash(), BlockNumber: ethBlock1.Number().Uint64(), ParentHash: ethBlock1.ParentHash()}
-
 			m.State.
 				On("GetForkIDByBatchNumber", mock.Anything).
 				Return(uint64(9), nil).
 				Maybe()
-			m.State.
-				On("GetLastBlock", ctx, m.DbTx).
-				Return(lastBlock1, nil).
-				Once()
-
 			m.State.
 				On("GetLastBatchNumber", ctx, m.DbTx).
 				Return(uint64(10), nil).
@@ -1505,34 +1545,33 @@ func TestRegularReorg(t *testing.T) {
 		ToBatchNumber:   math.MaxUint64,
 	}
 	m.State.EXPECT().GetForkIDInMemory(uint64(9)).Return(&forkIdInterval)
+	parentHash := common.HexToHash("0x111")
+	ethHeader0 := &ethTypes.Header{Number: big.NewInt(0), ParentHash: parentHash}
+	ethBlock0 := ethTypes.NewBlockWithHeader(ethHeader0)
+	ethHeader1bis := &ethTypes.Header{Number: big.NewInt(1), ParentHash: ethBlock0.Hash(), Time: 10, GasUsed: 20, Root: common.HexToHash("0x234")}
+	ethBlock1bis := ethTypes.NewBlockWithHeader(ethHeader1bis)
+	ethHeader2bis := &ethTypes.Header{Number: big.NewInt(2), ParentHash: ethBlock1bis.Hash()}
+	ethBlock2bis := ethTypes.NewBlockWithHeader(ethHeader2bis)
+	ethHeader1 := &ethTypes.Header{Number: big.NewInt(1), ParentHash: ethBlock0.Hash()}
+	ethBlock1 := ethTypes.NewBlockWithHeader(ethHeader1)
+	ethHeader2 := &ethTypes.Header{Number: big.NewInt(2), ParentHash: ethBlock1.Hash()}
+	ethBlock2 := ethTypes.NewBlockWithHeader(ethHeader2)
+
+	lastBlock0 := &state.Block{BlockHash: ethBlock0.Hash(), BlockNumber: ethBlock0.Number().Uint64(), ParentHash: ethBlock0.ParentHash()}
+	lastBlock1 := &state.Block{BlockHash: ethBlock1.Hash(), BlockNumber: ethBlock1.Number().Uint64(), ParentHash: ethBlock1.ParentHash()}
+	m.State.
+		On("GetLastBlock", mock.Anything, nil).
+		Return(lastBlock1, nil).
+		Once()
 
 	m.State.
 		On("BeginStateTransaction", ctxMatchBy).
 		Run(func(args mock.Arguments) {
 			ctx := args[0].(context.Context)
-			parentHash := common.HexToHash("0x111")
-			ethHeader0 := &ethTypes.Header{Number: big.NewInt(0), ParentHash: parentHash}
-			ethBlock0 := ethTypes.NewBlockWithHeader(ethHeader0)
-			ethHeader1bis := &ethTypes.Header{Number: big.NewInt(1), ParentHash: ethBlock0.Hash(), Time: 10, GasUsed: 20, Root: common.HexToHash("0x234")}
-			ethBlock1bis := ethTypes.NewBlockWithHeader(ethHeader1bis)
-			ethHeader2bis := &ethTypes.Header{Number: big.NewInt(2), ParentHash: ethBlock1bis.Hash()}
-			ethBlock2bis := ethTypes.NewBlockWithHeader(ethHeader2bis)
-			ethHeader1 := &ethTypes.Header{Number: big.NewInt(1), ParentHash: ethBlock0.Hash()}
-			ethBlock1 := ethTypes.NewBlockWithHeader(ethHeader1)
-			ethHeader2 := &ethTypes.Header{Number: big.NewInt(2), ParentHash: ethBlock1.Hash()}
-			ethBlock2 := ethTypes.NewBlockWithHeader(ethHeader2)
-
-			lastBlock0 := &state.Block{BlockHash: ethBlock0.Hash(), BlockNumber: ethBlock0.Number().Uint64(), ParentHash: ethBlock0.ParentHash()}
-			lastBlock1 := &state.Block{BlockHash: ethBlock1.Hash(), BlockNumber: ethBlock1.Number().Uint64(), ParentHash: ethBlock1.ParentHash()}
-
 			m.State.
 				On("GetForkIDByBatchNumber", mock.Anything).
 				Return(uint64(9), nil).
 				Maybe()
-			m.State.
-				On("GetLastBlock", ctx, m.DbTx).
-				Return(lastBlock1, nil).
-				Once()
 
 			// After a ResetState get lastblock that must be block 0
 			m.State.
@@ -1790,36 +1829,35 @@ func TestLatestSyncedBlockEmptyWithExtraReorg(t *testing.T) {
 		ToBatchNumber:   math.MaxUint64,
 	}
 	m.State.EXPECT().GetForkIDInMemory(uint64(9)).Return(&forkIdInterval)
+	parentHash := common.HexToHash("0x111")
+	ethHeader0 := &ethTypes.Header{Number: big.NewInt(0), ParentHash: parentHash}
+	ethBlock0 := ethTypes.NewBlockWithHeader(ethHeader0)
+	ethHeader1 := &ethTypes.Header{Number: big.NewInt(1), ParentHash: ethBlock0.Hash()}
+	ethBlock1 := ethTypes.NewBlockWithHeader(ethHeader1)
+	ethHeader1bis := &ethTypes.Header{Number: big.NewInt(1), ParentHash: ethBlock0.Hash(), Time: 0, GasUsed: 10}
+	ethBlock1bis := ethTypes.NewBlockWithHeader(ethHeader1bis)
+	ethHeader2 := &ethTypes.Header{Number: big.NewInt(2), ParentHash: ethBlock1.Hash()}
+	ethBlock2 := ethTypes.NewBlockWithHeader(ethHeader2)
+	ethHeader3 := &ethTypes.Header{Number: big.NewInt(3), ParentHash: ethBlock2.Hash()}
+	ethBlock3 := ethTypes.NewBlockWithHeader(ethHeader3)
+
+	lastBlock0 := &state.Block{BlockHash: ethBlock0.Hash(), BlockNumber: ethBlock0.Number().Uint64(), ParentHash: ethBlock0.ParentHash()}
+	lastBlock1 := &state.Block{BlockHash: ethBlock1.Hash(), BlockNumber: ethBlock1.Number().Uint64(), ParentHash: ethBlock1.ParentHash()}
+	lastBlock2 := &state.Block{BlockHash: ethBlock2.Hash(), BlockNumber: ethBlock2.Number().Uint64(), ParentHash: ethBlock2.ParentHash()}
+	m.State.
+		On("GetLastBlock", mock.Anything, nil).
+		Return(lastBlock2, nil).
+		Once()
 
 	m.State.
 		On("BeginStateTransaction", ctxMatchBy).
 		Run(func(args mock.Arguments) {
 			ctx := args[0].(context.Context)
-			parentHash := common.HexToHash("0x111")
-			ethHeader0 := &ethTypes.Header{Number: big.NewInt(0), ParentHash: parentHash}
-			ethBlock0 := ethTypes.NewBlockWithHeader(ethHeader0)
-			ethHeader1 := &ethTypes.Header{Number: big.NewInt(1), ParentHash: ethBlock0.Hash()}
-			ethBlock1 := ethTypes.NewBlockWithHeader(ethHeader1)
-			ethHeader1bis := &ethTypes.Header{Number: big.NewInt(1), ParentHash: ethBlock0.Hash(), Time: 0, GasUsed: 10}
-			ethBlock1bis := ethTypes.NewBlockWithHeader(ethHeader1bis)
-			ethHeader2 := &ethTypes.Header{Number: big.NewInt(2), ParentHash: ethBlock1.Hash()}
-			ethBlock2 := ethTypes.NewBlockWithHeader(ethHeader2)
-			ethHeader3 := &ethTypes.Header{Number: big.NewInt(3), ParentHash: ethBlock2.Hash()}
-			ethBlock3 := ethTypes.NewBlockWithHeader(ethHeader3)
-
-			lastBlock0 := &state.Block{BlockHash: ethBlock0.Hash(), BlockNumber: ethBlock0.Number().Uint64(), ParentHash: ethBlock0.ParentHash()}
-			lastBlock1 := &state.Block{BlockHash: ethBlock1.Hash(), BlockNumber: ethBlock1.Number().Uint64(), ParentHash: ethBlock1.ParentHash()}
-			lastBlock2 := &state.Block{BlockHash: ethBlock2.Hash(), BlockNumber: ethBlock2.Number().Uint64(), ParentHash: ethBlock2.ParentHash()}
 
 			m.State.
 				On("GetForkIDByBatchNumber", mock.Anything).
 				Return(uint64(9), nil).
 				Maybe()
-			m.State.
-				On("GetLastBlock", ctx, m.DbTx).
-				Return(lastBlock2, nil).
-				Once()
-
 			m.State.
 				On("GetLastBatchNumber", ctx, m.DbTx).
 				Return(uint64(10), nil).
@@ -1971,13 +2009,13 @@ func TestLatestSyncedBlockEmptyWithExtraReorg(t *testing.T) {
 				Once()
 
 			ethermanBlock0 := etherman.Block{
-				BlockNumber: 0,
+				BlockNumber: ethBlock0.NumberU64(),
 				ReceivedAt:  ti,
 				BlockHash:   ethBlock0.Hash(),
 				ParentHash:  ethBlock0.ParentHash(),
 			}
 			ethermanBlock1bis := etherman.Block{
-				BlockNumber: 1,
+				BlockNumber: ethBlock1.NumberU64(),
 				ReceivedAt:  ti,
 				BlockHash:   ethBlock1.Hash(),
 				ParentHash:  ethBlock1.ParentHash(),
@@ -2069,35 +2107,33 @@ func TestCallFromEmptyBlockAndReorg(t *testing.T) {
 		ToBatchNumber:   math.MaxUint64,
 	}
 	m.State.EXPECT().GetForkIDInMemory(uint64(9)).Return(&forkIdInterval)
+	parentHash := common.HexToHash("0x111")
+	ethHeader0 := &ethTypes.Header{Number: big.NewInt(0), ParentHash: parentHash}
+	ethBlock0 := ethTypes.NewBlockWithHeader(ethHeader0)
+	ethHeader1bis := &ethTypes.Header{Number: big.NewInt(1), ParentHash: ethBlock0.Hash(), Time: 10, GasUsed: 20, Root: common.HexToHash("0x234")}
+	ethBlock1bis := ethTypes.NewBlockWithHeader(ethHeader1bis)
+	ethHeader2bis := &ethTypes.Header{Number: big.NewInt(2), ParentHash: ethBlock1bis.Hash()}
+	ethBlock2bis := ethTypes.NewBlockWithHeader(ethHeader2bis)
+	ethHeader1 := &ethTypes.Header{Number: big.NewInt(1), ParentHash: ethBlock0.Hash()}
+	ethBlock1 := ethTypes.NewBlockWithHeader(ethHeader1)
+	ethHeader2 := &ethTypes.Header{Number: big.NewInt(2), ParentHash: ethBlock1.Hash()}
+	ethBlock2 := ethTypes.NewBlockWithHeader(ethHeader2)
 
+	lastBlock0 := &state.Block{BlockHash: ethBlock0.Hash(), BlockNumber: ethBlock0.Number().Uint64(), ParentHash: ethBlock0.ParentHash()}
+	lastBlock1 := &state.Block{BlockHash: ethBlock1.Hash(), BlockNumber: ethBlock1.Number().Uint64(), ParentHash: ethBlock1.ParentHash()}
+	m.State.
+		On("GetLastBlock", mock.Anything, nil).
+		Return(lastBlock1, nil).
+		Once()
 	m.State.
 		On("BeginStateTransaction", ctxMatchBy).
 		Run(func(args mock.Arguments) {
 			ctx := args[0].(context.Context)
-			parentHash := common.HexToHash("0x111")
-			ethHeader0 := &ethTypes.Header{Number: big.NewInt(0), ParentHash: parentHash}
-			ethBlock0 := ethTypes.NewBlockWithHeader(ethHeader0)
-			ethHeader1bis := &ethTypes.Header{Number: big.NewInt(1), ParentHash: ethBlock0.Hash(), Time: 10, GasUsed: 20, Root: common.HexToHash("0x234")}
-			ethBlock1bis := ethTypes.NewBlockWithHeader(ethHeader1bis)
-			ethHeader2bis := &ethTypes.Header{Number: big.NewInt(2), ParentHash: ethBlock1bis.Hash()}
-			ethBlock2bis := ethTypes.NewBlockWithHeader(ethHeader2bis)
-			ethHeader1 := &ethTypes.Header{Number: big.NewInt(1), ParentHash: ethBlock0.Hash()}
-			ethBlock1 := ethTypes.NewBlockWithHeader(ethHeader1)
-			ethHeader2 := &ethTypes.Header{Number: big.NewInt(2), ParentHash: ethBlock1.Hash()}
-			ethBlock2 := ethTypes.NewBlockWithHeader(ethHeader2)
-
-			lastBlock0 := &state.Block{BlockHash: ethBlock0.Hash(), BlockNumber: ethBlock0.Number().Uint64(), ParentHash: ethBlock0.ParentHash()}
-			lastBlock1 := &state.Block{BlockHash: ethBlock1.Hash(), BlockNumber: ethBlock1.Number().Uint64(), ParentHash: ethBlock1.ParentHash()}
 
 			m.State.
 				On("GetForkIDByBatchNumber", mock.Anything).
 				Return(uint64(9), nil).
 				Maybe()
-			m.State.
-				On("GetLastBlock", ctx, m.DbTx).
-				Return(lastBlock1, nil).
-				Once()
-
 			m.State.
 				On("GetLastBatchNumber", ctx, m.DbTx).
 				Return(uint64(10), nil).
