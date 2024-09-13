@@ -76,6 +76,10 @@ type StateInterface interface {
 	GetLatestBatchGlobalExitRoot(ctx context.Context, dbTx pgx.Tx) (common.Hash, error)
 	GetL2TxHashByTxHash(ctx context.Context, hash common.Hash, dbTx pgx.Tx) (*common.Hash, error)
 	PreProcessUnsignedTransaction(ctx context.Context, tx *types.Transaction, sender common.Address, l2BlockNumber *uint64, dbTx pgx.Tx) (*state.ProcessBatchResponse, error)
+	GetCurrentForkID(ctx context.Context, dbTx pgx.Tx) (uint64, error)
+	GetForkIDByBatchNumber(batchNumber uint64) uint64
+	GetForkByID(ctx context.Context, forkID uint64, dbTx pgx.Tx) (*state.ForkIDInterval, error)
+	GetForkIDIntervals(ctx context.Context, dbTx pgx.Tx) ([]state.ForkIDInterval, error)
 }
 
 // EthermanInterface provides integration with L1

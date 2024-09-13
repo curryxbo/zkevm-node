@@ -1950,6 +1950,63 @@ func (_c *StorageMock_GetBlockNumVirtualBatchByBatchNum_Call) RunAndReturn(run f
 	return _c
 }
 
+// GetCurrentForkID provides a mock function with given fields: ctx, dbTx
+func (_m *StorageMock) GetCurrentForkID(ctx context.Context, dbTx pgx.Tx) (uint64, error) {
+	ret := _m.Called(ctx, dbTx)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetCurrentForkID")
+	}
+
+	var r0 uint64
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, pgx.Tx) (uint64, error)); ok {
+		return rf(ctx, dbTx)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, pgx.Tx) uint64); ok {
+		r0 = rf(ctx, dbTx)
+	} else {
+		r0 = ret.Get(0).(uint64)
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, pgx.Tx) error); ok {
+		r1 = rf(ctx, dbTx)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// StorageMock_GetCurrentForkID_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetCurrentForkID'
+type StorageMock_GetCurrentForkID_Call struct {
+	*mock.Call
+}
+
+// GetCurrentForkID is a helper method to define mock.On call
+//   - ctx context.Context
+//   - dbTx pgx.Tx
+func (_e *StorageMock_Expecter) GetCurrentForkID(ctx interface{}, dbTx interface{}) *StorageMock_GetCurrentForkID_Call {
+	return &StorageMock_GetCurrentForkID_Call{Call: _e.mock.On("GetCurrentForkID", ctx, dbTx)}
+}
+
+func (_c *StorageMock_GetCurrentForkID_Call) Run(run func(ctx context.Context, dbTx pgx.Tx)) *StorageMock_GetCurrentForkID_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(pgx.Tx))
+	})
+	return _c
+}
+
+func (_c *StorageMock_GetCurrentForkID_Call) Return(_a0 uint64, _a1 error) *StorageMock_GetCurrentForkID_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *StorageMock_GetCurrentForkID_Call) RunAndReturn(run func(context.Context, pgx.Tx) (uint64, error)) *StorageMock_GetCurrentForkID_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // GetDSBatches provides a mock function with given fields: ctx, firstBatchNumber, lastBatchNumber, readWIPBatch, dbTx
 func (_m *StorageMock) GetDSBatches(ctx context.Context, firstBatchNumber uint64, lastBatchNumber uint64, readWIPBatch bool, dbTx pgx.Tx) ([]*state.DSBatch, error) {
 	ret := _m.Called(ctx, firstBatchNumber, lastBatchNumber, readWIPBatch, dbTx)
@@ -2617,6 +2674,66 @@ func (_c *StorageMock_GetForcedBatchesSince_Call) Return(_a0 []*state.ForcedBatc
 }
 
 func (_c *StorageMock_GetForcedBatchesSince_Call) RunAndReturn(run func(context.Context, uint64, uint64, pgx.Tx) ([]*state.ForcedBatch, error)) *StorageMock_GetForcedBatchesSince_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetForkByID provides a mock function with given fields: ctx, forkID, dbTx
+func (_m *StorageMock) GetForkByID(ctx context.Context, forkID uint64, dbTx pgx.Tx) (*state.ForkIDInterval, error) {
+	ret := _m.Called(ctx, forkID, dbTx)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetForkByID")
+	}
+
+	var r0 *state.ForkIDInterval
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, uint64, pgx.Tx) (*state.ForkIDInterval, error)); ok {
+		return rf(ctx, forkID, dbTx)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, uint64, pgx.Tx) *state.ForkIDInterval); ok {
+		r0 = rf(ctx, forkID, dbTx)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*state.ForkIDInterval)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, uint64, pgx.Tx) error); ok {
+		r1 = rf(ctx, forkID, dbTx)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// StorageMock_GetForkByID_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetForkByID'
+type StorageMock_GetForkByID_Call struct {
+	*mock.Call
+}
+
+// GetForkByID is a helper method to define mock.On call
+//   - ctx context.Context
+//   - forkID uint64
+//   - dbTx pgx.Tx
+func (_e *StorageMock_Expecter) GetForkByID(ctx interface{}, forkID interface{}, dbTx interface{}) *StorageMock_GetForkByID_Call {
+	return &StorageMock_GetForkByID_Call{Call: _e.mock.On("GetForkByID", ctx, forkID, dbTx)}
+}
+
+func (_c *StorageMock_GetForkByID_Call) Run(run func(ctx context.Context, forkID uint64, dbTx pgx.Tx)) *StorageMock_GetForkByID_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(uint64), args[2].(pgx.Tx))
+	})
+	return _c
+}
+
+func (_c *StorageMock_GetForkByID_Call) Return(_a0 *state.ForkIDInterval, _a1 error) *StorageMock_GetForkByID_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *StorageMock_GetForkByID_Call) RunAndReturn(run func(context.Context, uint64, pgx.Tx) (*state.ForkIDInterval, error)) *StorageMock_GetForkByID_Call {
 	_c.Call.Return(run)
 	return _c
 }

@@ -49,3 +49,18 @@ func (s *State) GetForkIDByBatchNumber(batchNumber uint64) uint64 {
 func (s *State) GetForkIDByBlockNumber(blockNumber uint64) uint64 {
 	return s.storage.GetForkIDByBlockNumber(blockNumber)
 }
+
+// GetCurrentForkID gets the current fork id
+func (s *State) GetCurrentForkID(ctx context.Context, dbTx pgx.Tx) (uint64, error) {
+	return s.storage.GetCurrentForkID(ctx, dbTx)
+}
+
+// GetForkByID gets the fork id interval by fork id number
+func (s *State) GetForkByID(ctx context.Context, forkID uint64, dbTx pgx.Tx) (*ForkIDInterval, error) {
+	return s.storage.GetForkByID(ctx, forkID, dbTx)
+}
+
+// GetForkIDIntervals gets all fork id intervals
+func (s *State) GetForkIDIntervals(ctx context.Context, dbTx pgx.Tx) ([]ForkIDInterval, error) {
+	return s.storage.GetForkIDs(ctx, dbTx)
+}

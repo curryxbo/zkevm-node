@@ -471,6 +471,126 @@
           "$ref": "#/components/schemas/Integer"
         }
       }
+    },
+    {
+      "name": "zkevm_forkId",
+      "summary": "Returns the network's current fork ID.",
+      "params": [],
+      "result": {
+        "$ref": "#/components/contentDescriptors/ForkID"
+      },
+      "examples": [
+        {
+          "name": "example",
+          "description": "",
+          "params": [],
+          "result": {
+            "name": "exampleResult",
+            "description": "",
+            "value": "0x1"
+          }
+        }
+      ]
+    },
+    {
+      "name": "zkevm_getForkById",
+      "summary": "returns the network fork ID interval given the provided fork id",
+      "params": [
+        {
+          "$ref": "#/components/contentDescriptors/ForkID"
+        }
+      ],
+      "result": {
+        "$ref": "#/components/contentDescriptors/Fork"
+      },
+      "examples": [
+        {
+          "name": "example",
+          "description": "",
+          "params": [
+            {
+              "name": "fork id",
+              "value": "0x1"
+            }
+          ],
+          "result": {
+            "name": "Fork",
+            "value": {
+              "forkId": "0x8",
+              "fromBatchNumber": "0x1",
+              "toBatchNumber": "0xffffffffffffffff",
+              "version": "",
+              "blockNumber": "0x88"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "zkevm_getForkIdByBatchNumber",
+      "summary": "returns the fork ID given the provided batch number",
+      "params": [
+        {
+          "$ref": "#/components/contentDescriptors/BatchNumber"
+        }
+      ],
+      "result": {
+        "$ref": "#/components/contentDescriptors/ForkID"
+      },
+      "examples": [
+        {
+          "name": "example",
+          "description": "",
+          "params": [],
+          "result": {
+            "name": "exampleResult",
+            "description": "",
+            "value": "0x1"
+          }
+        }
+      ]
+    },
+    {
+      "name": "zkevm_getForks",
+      "summary": "returns the network fork ID interval given the provided fork id",
+      "params": [],
+      "result": {
+        "name": "result",
+        "schema": {
+          "description": "Array of forks",
+          "type": "array",
+          "items": {
+            "title": "fork",
+            "$ref": "#/components/contentDescriptors/Fork"
+          }
+        }
+      },
+      "examples": [
+        {
+          "name": "example",
+          "description": "",
+          "params": [],
+          "result": {
+            "name": "Fork",
+            "value": [
+              {
+                "forkId": "0x8",
+                "fromBatchNumber": "0x1",
+                "toBatchNumber": "0xa",
+                "version": "",
+                "blockNumber": "0x88"
+              },
+              {
+                "forkId": "0x9",
+                "fromBatchNumber": "0xb",
+                "toBatchNumber": "0xffffffffffffffff",
+                "version": "",
+                "blockNumber": "0x188"
+              }
+            ] 
+          }
+        }
+      ]
     }
   ],
   "components": {
@@ -520,6 +640,14 @@
           "$ref": "#/components/schemas/Block"
         }
       },
+      "Fork": {
+        "name": "fork",
+        "description": "fork",
+        "required": true,
+        "schema": {
+          "$ref": "#/components/schemas/Fork"
+        }
+      },
       "Transaction": {
         "required": true,
         "name": "transaction",
@@ -547,6 +675,13 @@
               "$ref": "#/components/schemas/Null"
             }
           ]
+        }
+      },
+      "ForkID": {
+        "name": "forkID",
+        "required": true,
+        "schema": {
+          "$ref": "#/components/schemas/ForkID"
         }
       }
     },
@@ -1435,6 +1570,36 @@
           },
           "data": {
             "$ref": "#/components/schemas/Integer"
+          }
+        }
+      },
+      "ForkID": {
+        "title": "forkID",
+        "type": "string",
+        "description": "The hex representation of the fork's id",
+        "$ref": "#/components/schemas/Integer"
+      },
+      "Fork": {
+        "title": "Fork",
+        "type": "object",
+        "readOnly": true,
+        "properties": {
+          "forkId": {
+            "$ref": "#/components/schemas/ForkID"
+          },
+          "fromBatchNumber": {
+            "$ref": "#/components/schemas/BatchNumber"
+          },
+          "toBatchNumber": {
+            "$ref": "#/components/schemas/BatchNumber"
+          },
+          "Version": {
+            "title": "batchNumberTag",
+            "type": "string",
+            "description": "fork version"
+          },
+          "BlockNumber": {
+            "$ref": "#/components/schemas/BlockNumber"
           }
         }
       }
